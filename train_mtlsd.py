@@ -181,7 +181,8 @@ def train(  # todo: validate?
         show_gt=True,
         show_pred=False,
         lsd_channels=None,
-        aff_channels=None):
+        aff_channels=None,
+        show_in_napari=False):
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
     gt_lsds = gp.ArrayKey('GT_LSDS')
@@ -328,7 +329,7 @@ def train(  # todo: validate?
                             imshow(tb=tb, it=batch.iteration, target=batch[pred_affs].data, target_name='pred ' + n,
                                    channel=c)
 
-                fig, voi_split, voi_merge = eval_cube(f"model_checkpoint_{batch.iteration}")
+                fig, voi_split, voi_merge = eval_cube(f"model_checkpoint_{batch.iteration}", show_in_napari=show_in_napari)
                 tb.add_figure("eval", fig, batch.iteration)
                 tb.add_scalar("voi_split", voi_split, batch.iteration)
                 tb.add_scalar("voi_merge", voi_merge, batch.iteration)
@@ -387,4 +388,5 @@ if __name__ == "__main__":
         show_every=100,
         show_pred=True,
         lsd_channels=lsd_channels,
-        aff_channels=aff_channels)
+        aff_channels=aff_channels,
+        show_in_napari=False)

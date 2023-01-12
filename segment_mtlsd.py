@@ -169,12 +169,12 @@ def get_segmentation(affinities, waterz_threshold, fragment_threshold):
     return segmentation, fragments, boundary_distances
 
 
-def eval_cube(checkpoint='model_checkpoint_100000'):
+def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False):
     # 'model_checkpoint_50000'
     raw_file = "validation_data.zarr"  # "./training_data.zarr"  # todo  'testing_data.zarr'
     raw_dataset = 'raw/0'  # todo: use more than 1 cube? not required for now
 
-    pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, raw_file)
+    pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=show_in_napari)
     voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
     print("voi", voi)
 
@@ -207,7 +207,7 @@ def eval_cube(checkpoint='model_checkpoint_100000'):
     return fig, rand_voi_report["voi_split"], rand_voi_report["voi_merge"]
 
 
-def run_eval(checkpoint, raw_dataset, raw_file):
+def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
     raw, pred_lsds, pred_affs = predict(checkpoint, raw_file, raw_dataset)
     # watershed assumes 3d arrays, create fake channel dim (call these watershed affs - ws_affs)
     ws_affs = np.stack([
@@ -232,7 +232,7 @@ def run_eval(checkpoint, raw_dataset, raw_file):
         (data["labels"][0][10:-10, 10:-10, 10:-10]).astype(np.uint64),
         segmentation,  # segment_ids,
         return_cluster_scores=False)
-    if True:  # todo: napari flag
+    if show_in_napari:
         # fragments_new = np.reshape(np.arange(fragments.size, dtype=np.uint64), fragments.shape) + 1
         # generator = waterz.agglomerate(
         #    affs=ws_affs.astype(np.float32),  # .squeeze(1),
