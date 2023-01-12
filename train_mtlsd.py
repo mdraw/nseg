@@ -1,8 +1,11 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/train_mtlsd.ipynb
-# conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
+# conda install python=3.10 napari boost cython pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 # pip install gunpowder matplotlib scikit-image scipy zarr tensorboard git+https://github.com/funkelab/funlib.evaluate git+https://github.com/funkelab/funlib.learn.torch.git git+https://github.com/funkey/waterz.git git+https://github.com/funkelab/lsd.git
 
 import logging
+
+import matplotlib
+matplotlib.use('AGG')
 
 import gunpowder as gp
 import matplotlib.pyplot as plt
@@ -245,20 +248,10 @@ def train(  # todo: validate?
         downsample=2  # todo: tune
     )
 
+    neighborhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+
     pipeline += gp.AddAffinities(
-        affinity_neighborhood=[  # todo: order?
-            #    [0, -1],
-            #    [-1, 0]
-            [0, 0, -1],
-            [0, -1, 0],
-            [-1, 0, 0],
-            # [-1, 0, 0],
-            # [1, 0, 0],
-            # [0, -1, 0],
-            # [0, 1, 0],
-            # [0, 0, -1],
-            # [0, 0, 1],
-        ],
+        affinity_neighborhood=neighborhood,
         labels=labels,
         affinities=gt_affs,
         dtype=np.float32)
@@ -389,7 +382,8 @@ assert torch.cuda.is_available()
 
 if __name__ == "__main__":
     train(
-        iterations=100001,
+        # iterations=100001,
+        iterations=1001,
         show_every=100,
         show_pred=True,
         lsd_channels=lsd_channels,
