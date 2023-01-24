@@ -246,7 +246,7 @@ def train(  # todo: validate?
         gt_lsds,
         lsds_mask=lsds_weights,
         sigma=2,  # 80,  # todo: tune
-        downsample=2  # todo: tune
+        downsample=1  # todo: tune
     )
 
     neighborhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]

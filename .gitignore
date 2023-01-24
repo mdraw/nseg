@@ -109,3 +109,9 @@ ENV/
 
 # VS Code
 .vscode/
+
+# Outputs
+out/
+
+training_data.zarr/
+validation_data.zarr/

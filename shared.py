@@ -2,16 +2,19 @@ import numpy as np
 import torch
 from funlib.learn.torch.models import UNet, ConvPass
 
+# from elektronn3.models.unet import UNet as EU
 
 def create_lut(labels):
     max_label = np.max(labels)
 
+    # Generate random RGB colors for all labels
     lut = np.random.randint(
         low=0,
         high=255,
         size=(int(max_label + 1), 3),
         dtype=np.uint8)
 
+    # Add an alpha=255 channel to all colors -> RGBA values
     lut = np.append(
         lut,
         np.zeros(
@@ -19,13 +22,15 @@ def create_lut(labels):
             dtype=np.uint8) + 255,
         axis=1)
 
+    # Set background color to (0,0,0,0)
     lut[0] = 0
+    # Get colors from label LUT
     colored_labels = lut[labels]
 
     return colored_labels
 
 
-def get_mtlsdmodel():  # todo: also use advanced architectures
+def get_mtlsdmodel(padding='same'):  # todo: also use advanced architectures
     in_channels = 6  # 1
     num_fmaps = 12
     fmap_inc_factor = 5
@@ -41,7 +46,8 @@ def get_mtlsdmodel():  # todo: also use advanced architectures
         ds_fact,
         ksd,
         ksu,
-        constant_upsample)
+        constant_upsample,
+        padding=padding)
     return model
 
 
@@ -55,7 +61,8 @@ class MtlsdModel(torch.nn.Module):
             downsample_factors,
             kernel_size_down,
             kernel_size_up,
-            constant_upsample):
+            constant_upsample,
+            padding):
         super().__init__()
 
         # create unet
@@ -66,7 +73,16 @@ class MtlsdModel(torch.nn.Module):
             downsample_factors=downsample_factors,
             kernel_size_down=kernel_size_down,
             kernel_size_up=kernel_size_up,
-            constant_upsample=constant_upsample)
+            constant_upsample=constant_upsample,
+            padding=padding)
+
+        # self.unet = EU(
+        #     in_channels=1,
+        #     out_channels=32,
+        #     dim=3,
+        #     conv_mode='same',
+        #     n_blocks=4,
+        # )
 
         # create lsd and affs heads
         self.lsd_head = ConvPass(num_fmaps, 10  # 6
