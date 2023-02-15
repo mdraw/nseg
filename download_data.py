@@ -3,7 +3,6 @@
 import os
 import boto3
 import numpy as np
-import tqdm
 
 
 # # list data
@@ -54,9 +53,10 @@ client = boto3.client('s3', aws_access_key_id=access_key, aws_secret_access_key=
 # local_path = '/cajal/scratch/projects/misc/mdraw/data'
 
 dataset_names = [
-    'training',
-    'testing/ground_truth/validation',
-    # 'testing'
+    # 'training',
+    # 'testing/ground_truth/validation',
+    # 'testing',
+    '',
 ]
 
 for dataset_name in dataset_names:

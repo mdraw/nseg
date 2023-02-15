@@ -31,7 +31,7 @@ def create_lut(labels):
 
 
 def get_mtlsdmodel(padding='same'):  # todo: also use advanced architectures
-    in_channels = 6  # 1
+    in_channels = 1
     num_fmaps = 12
     fmap_inc_factor = 5
     ds_fact = [(2, 2, 2), (2, 2, 2)]
@@ -66,23 +66,25 @@ class MtlsdModel(torch.nn.Module):
         super().__init__()
 
         # create unet
-        self.unet = UNet(
-            in_channels=in_channels,
-            num_fmaps=num_fmaps,
-            fmap_inc_factor=fmap_inc_factor,
-            downsample_factors=downsample_factors,
-            kernel_size_down=kernel_size_down,
-            kernel_size_up=kernel_size_up,
-            constant_upsample=constant_upsample,
-            padding=padding)
+        # self.unet = UNet(
+        #     in_channels=in_channels,
+        #     num_fmaps=num_fmaps,
+        #     fmap_inc_factor=fmap_inc_factor,
+        #     downsample_factors=downsample_factors,
+        #     kernel_size_down=kernel_size_down,
+        #     kernel_size_up=kernel_size_up,
+        #     constant_upsample=constant_upsample,
+        #     padding=padding)
 
-        # self.unet = EU(
-        #     in_channels=1,
-        #     out_channels=32,
-        #     dim=3,
-        #     conv_mode='same',
-        #     n_blocks=4,
-        # )
+        from elektronn3.models.unet import UNet as EU
+        self.unet = EU(
+            in_channels=in_channels,
+            out_channels=num_fmaps,
+            dim=3,
+            conv_mode='same',
+            n_blocks=4,
+        )
+        # self.unet = torch.nn.Conv3d(in_channels, num_fmaps, 1)
 
         # create lsd and affs heads
         self.lsd_head = ConvPass(num_fmaps, 10  # 6

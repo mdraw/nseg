@@ -3,6 +3,7 @@
 # pip install gunpowder matplotlib scikit-image scipy zarr tensorboard git+https://github.com/funkelab/funlib.evaluate git+https://github.com/funkelab/funlib.learn.torch.git git+https://github.com/funkey/waterz.git git+https://github.com/funkelab/lsd.git
 
 import logging
+from pathlib import Path
 
 import matplotlib
 matplotlib.use('AGG')
@@ -16,7 +17,7 @@ from lsd.train.gp import AddLocalShapeDescriptor
 from torch.utils import tensorboard
 from tqdm import tqdm
 
-from params import input_size, output_size, batch_size, voxel_size, num_samples
+from params import input_size, output_size, batch_size, voxel_size
 from segment_mtlsd import eval_cube
 from shared import create_lut, get_mtlsdmodel
 
@@ -49,7 +50,7 @@ def imshow(
         channel=0,
         target_name='target',
         prediction_name='prediction'):
-    raw = raw[:, :, :, :, raw.shape[-1] // 2] if raw is not None else None
+    raw = raw[:, :, :, raw.shape[-1] // 2] if raw is not None else None
     ground_truth = ground_truth[:, :, :, ground_truth.shape[-1] // 2] if ground_truth is not None else None
     target = target[:, :, :, :, target.shape[-1] // 2] if target is not None else None
     prediction = prediction[:, :, :, :, prediction.shape[-1] // 2] if prediction is not None else None
@@ -176,6 +177,7 @@ class WeightedMSELoss(torch.nn.MSELoss):
 
 
 def train(  # todo: validate?
+        tr_files,
         iterations,
         show_every,
         show_gt=True,
@@ -207,20 +209,41 @@ def train(  # todo: validate?
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
 
+    # sources = tuple(
+    #     gp.ZarrSource(
+    #         './training_data.zarr',
+    #         {
+    #             raw: f'raw/{i}',
+    #             labels: f'labels/{i}'
+    #         },
+    #         {
+    #             raw: gp.ArraySpec(interpolatable=True),
+    #             labels: gp.ArraySpec(interpolatable=False)
+    #         }) +
+    #     gp.Normalize(raw) +
+    #     gp.RandomLocation()
+    #     for i in range(num_samples)
+    # )
+
+    ## TODO: Padding?
+    # labels_padding = gp.Coordinate((350,550,550))
     sources = tuple(
         gp.ZarrSource(
-            './training_data.zarr',
+            tr_file,
             {
-                raw: f'raw/{i}',
-                labels: f'labels/{i}'
+                raw: 'volumes/raw',
+                labels: 'volumes/labels/neuron_ids'
             },
             {
                 raw: gp.ArraySpec(interpolatable=True),
                 labels: gp.ArraySpec(interpolatable=False)
             }) +
         gp.Normalize(raw) +
+        # gp.Squeeze([raw], axis=0) +
+        # gp.Pad(raw, None) +
+        # gp.Pad(labels, labels_padding) +
         gp.RandomLocation()
-        for i in range(num_samples)
+        for tr_file in tr_files
     )
 
     # raw:      (h, w)
@@ -230,7 +253,7 @@ def train(  # todo: validate?
 
     pipeline += gp.RandomProvider()
 
-    pipeline += gp.SimpleAugment()  # todo: also rotate?
+    # pipeline += gp.SimpleAugment(transpose_only=[0, 1])  # todo: also rotate?
 
     pipeline += gp.IntensityAugment(  # todo: channel wise!
         raw,
@@ -245,11 +268,26 @@ def train(  # todo: validate?
         labels,
         gt_lsds,
         lsds_mask=lsds_weights,
-        sigma=2,  # 80,  # todo: tune
-        downsample=1  # todo: tune
+        sigma=80,  # 80,  # todo: tune
+        downsample=2  # todo: tune
     )
 
     neighborhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+
+    # neighborhood = [  # todo: order?
+    #         #    [0, -1],
+    #         #    [-1, 0]
+    #         [0, 0, -1],
+    #         [0, -1, 0],
+    #         [-1, 0, 0],
+    #         # [-1, 0, 0],
+    #         # [1, 0, 0],
+    #         # [0, -1, 0],
+    #         # [0, 1, 0],
+    #         # [0, 0, -1],
+    #         # [0, 0, 1],
+    # ]
+
 
     pipeline += gp.AddAffinities(
         affinity_neighborhood=neighborhood,
@@ -261,13 +299,13 @@ def train(  # todo: validate?
         gt_affs,
         affs_weights)
 
-    # pipeline += gp.Unsqueeze([raw])
+    pipeline += gp.Unsqueeze([raw])
 
     pipeline += gp.Stack(batch_size)
 
     # pipeline += gp.PreCache(num_workers=10 #todo: use
     #                        )
-    save_iter = 1000  # todo: increase
+    save_iter = show_every  # todo: increase
     pipeline += Train(
         model,
         loss,
@@ -288,16 +326,17 @@ def train(  # todo: validate?
             5: affs_weights
         },
         # log_dir = "./logs/"
-        save_every=save_iter,  # todo: increase
+        save_every=save_iter,  # todo: increase,
+        resume=False,
     )
 
     tb = tensorboard.SummaryWriter("./logs/")
 
     with gp.build(pipeline):
-        progress = tqdm(range(iterations))
+        progress = tqdm(range(iterations), dynamic_ncols=True)
         for i in progress:
             batch = pipeline.request_batch(request)
-
+            # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
             end = request[labels].roi.get_end() / voxel_size
             if (i + 1) % 10 or (i + 1) % save_iter == 0:
@@ -379,13 +418,20 @@ aff_channels = {
     # 'affs_5': 5,
 }
 
-assert torch.cuda.is_available()
+# assert torch.cuda.is_available()
+
 
 if __name__ == "__main__":
+    tr_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/').expanduser()
+    val_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/validation/').expanduser()
+    tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
+    val_files = [str(fp) for fp in val_root.glob('*.zarr')]
+
     train(
+        tr_files=tr_files,
         # iterations=100001,
         iterations=1001,
-        show_every=100,
+        show_every=20,
         show_pred=True,
         lsd_channels=lsd_channels,
         aff_channels=aff_channels,

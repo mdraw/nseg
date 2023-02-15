@@ -1,5 +1,6 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
 
+from pathlib import Path
 import gunpowder as gp
 import matplotlib.pyplot as plt
 import napari
@@ -40,6 +41,8 @@ def predict(
         {
             raw: gp.ArraySpec(interpolatable=True)
         })
+
+    source += gp.Unsqueeze([raw])
 
     with gp.build(source):
         total_input_roi = source.spec[raw].roi
@@ -171,8 +174,10 @@ def get_segmentation(affinities, waterz_threshold, fragment_threshold):
 
 def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False):
     # 'model_checkpoint_50000'
-    raw_file = "validation_data.zarr"  # "./training_data.zarr"  # todo  'testing_data.zarr'
-    raw_dataset = 'raw/0'  # todo: use more than 1 cube? not required for now
+    val_root = Path('~/data/zebrafinch_msplit/validation/').expanduser()
+    raw_files = val_root.glob('*.zarr')
+    raw_file = str(list(raw_files)[0])
+    raw_dataset = 'volumes/raw'  # todo: use more than 1 cube? not required for now
 
     pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=show_in_napari)
     voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
@@ -227,7 +232,8 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
     segmentation, fragments, boundary_distances = get_segmentation(ws_affs, threshold, fragment_threshold=0.5
                                                                    # 0.5#0.9 #todo: tune
                                                                    )
-    data = zarr.open(raw_file, 'a')
+    data = zarr.open(raw_file, 'r')
+    print('Before roi report...')
     rand_voi_report = rand_voi(
         (data["labels"][0][10:-10, 10:-10, 10:-10]).astype(np.uint64),
         segmentation,  # segment_ids,
