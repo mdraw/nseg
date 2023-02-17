@@ -17,6 +17,51 @@ from params import input_size, output_size
 from shared import create_lut, get_mtlsdmodel
 
 
+
+def center_crop(a, b):  # todo: from secgan
+    import math
+
+    a_dim = list(a.shape)
+    b_dim = list(b.shape)
+
+    for i in range(-1, -4, -1):
+        # take the last 3 dimensions. a and b don't need to have the same number of dimensions
+        # (i.e. only one has channels)
+        if a_dim[i] != b_dim[i]:
+            if a_dim[i] > b_dim[i]:
+                crop_val = (a_dim[i] - b_dim[i]) / 2
+            else:
+                crop_val = (b_dim[i] - a_dim[i]) / 2
+
+            left = math.floor(crop_val)
+            right = -math.ceil(crop_val)
+
+            if a_dim[i] > b_dim[i]:
+                slice_window = tuple(
+                    [slice(None)] * (len(a.shape) - 3)
+                    + (
+                        [
+                            slice(left, right) if i == j else slice(None)
+                            for j in range(-1, -4, -1)
+                        ][::-1]
+                    )
+                )
+                a = a[slice_window]
+            else:
+                slice_window = tuple(
+                    [slice(None)] * (len(b.shape) - 3)
+                    + (
+                        [
+                            slice(left, right) if i == j else slice(None)
+                            for j in range(-1, -4, -1)
+                        ][::-1]
+                    )
+                )
+                b = b[slice_window]
+
+    return a, b
+
+
 def predict(
         checkpoint,
         raw_file,
@@ -234,10 +279,16 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
                                                                    )
     data = zarr.open(raw_file, 'r')
     print('Before roi report...')
+    labels = data.volumes.labels.neuron_ids
+    # labels = labels[100:-100, 200:-200, 200:-200]
+    # segmentation = segmentation[100:-100, 200:-200, 200:-200]
+    segmentation, labels = center_crop(segmentation, labels)
+    # TODO: Also crop preds, fragments, ...
     rand_voi_report = rand_voi(
-        (data["labels"][0][10:-10, 10:-10, 10:-10]).astype(np.uint64),
+        labels,
         segmentation,  # segment_ids,
-        return_cluster_scores=False)
+        return_cluster_scores=False
+    )
     if show_in_napari:
         # fragments_new = np.reshape(np.arange(fragments.size, dtype=np.uint64), fragments.shape) + 1
         # generator = waterz.agglomerate(
@@ -258,7 +309,7 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
         # viewer.add_image(boundary_distances, name="boundary_distances")
         viewer.add_labels(segmentation, name="seg")
         viewer.add_labels(fragments, name="frag")
-        viewer.add_labels(data["labels"][0][10:-10, 10:-10, 10:-10], name="gt")
+        viewer.add_labels(labels, name="gt")
         napari.run()
     return pred_affs, pred_lsds, rand_voi_report, raw, segmentation
 

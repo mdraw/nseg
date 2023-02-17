@@ -268,7 +268,7 @@ def train(  # todo: validate?
         labels,
         gt_lsds,
         lsds_mask=lsds_weights,
-        sigma=80,  # 80,  # todo: tune
+        sigma=80,  # 80,  # todo: tune --> zf: 120, see https://github.com/funkelab/lsd/issues/9#issuecomment-1065299067
         downsample=2  # todo: tune
     )
 
