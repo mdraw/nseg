@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 # zebrafinch: zyx space
+# sizes (voxel_size, input_size, ...) need to be in zyx!
+
 
 # voxel_size = gp.Coordinate((9, 9, 20))  # todo: estimate from data (4, 4, 20)
 # voxel_size = gp.Coordinate((9, 9, 20))  # todo: estimate from data (4, 4, 20)
@@ -26,20 +28,21 @@ from pathlib import Path
 # output_shape = gp.Coordinate((84, 84, 84)  # (124, 124, 124)
 #                              )
 
+voxel_size = gp.Coordinate((20, 9, 9))  # zyx
 
+padding = 'valid'
 
-# voxel_size = gp.Coordinate((1, 1, 1))  # todo: estimate from data (4, 4, 20)
-# input_shape = gp.Coordinate((60, 90, 90))  # todo: increase (164, 164, 164)
-# output_shape = input_shape
-
-
-voxel_size = gp.Coordinate((20, 9, 9))  # todo: estimate from data (4, 4, 20)
 # input size in voxels
-# input_shape = gp.Coordinate((3, 10, 10))  # todo: increase (164, 164, 164)
-input_shape = gp.Coordinate((80, 80, 80))  # todo: increase (164, 164, 164)
-output_shape = input_shape
 
-# sizes (voxel_size, input_size, ...) need to be in zyx!
+if padding == 'same':
+    input_shape = gp.Coordinate((80, 80, 80))  # todo: increase (164, 164, 164)
+    output_shape = input_shape
+elif padding == 'valid':
+    s = 164
+    input_shape = gp.Coordinate((s, s, s))
+    offset = gp.Coordinate((40, 40, 40))
+    output_shape = input_shape - offset
+
 
 input_size = input_shape * voxel_size
 output_size = output_shape * voxel_size

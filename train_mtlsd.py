@@ -2,6 +2,9 @@
 # conda install python=3.10 napari boost cython pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 # pip install gunpowder matplotlib scikit-image scipy zarr tensorboard git+https://github.com/funkelab/funlib.evaluate git+https://github.com/funkelab/funlib.learn.torch.git git+https://github.com/funkey/waterz.git git+https://github.com/funkelab/lsd.git
 
+# TODO: Add ref to own gp fork
+
+import datetime
 import logging
 from pathlib import Path
 
@@ -184,7 +187,9 @@ def train(  # todo: validate?
         show_pred=False,
         lsd_channels=None,
         aff_channels=None,
-        show_in_napari=False):
+        show_in_napari=False,
+        save_path=Path('.')
+):
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
     gt_lsds = gp.ArrayKey('GT_LSDS')
@@ -264,6 +269,7 @@ def train(  # todo: validate?
     # todo: randomly reorder channels? (except for synapse markers homer/basoon)
     pipeline += gp.GrowBoundary(labels)
 
+    # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
     pipeline += AddLocalShapeDescriptor(
         labels,
         gt_lsds,
@@ -327,10 +333,13 @@ def train(  # todo: validate?
         },
         # log_dir = "./logs/"
         save_every=save_iter,  # todo: increase,
+        checkpoint_basename=str(save_path / 'model'),
         resume=False,
     )
 
-    tb = tensorboard.SummaryWriter("./logs/")
+    # Write tensorboard logs into common parent folder for all trainings for easier comparison
+    tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
+    tb = tensorboard.SummaryWriter(save_path / "logs")
 
     with gp.build(pipeline):
         progress = tqdm(range(iterations), dynamic_ncols=True)
@@ -427,12 +436,19 @@ if __name__ == "__main__":
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
     val_files = [str(fp) for fp in val_root.glob('*.zarr')]
 
+    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+    save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
+    save_path.mkdir(parents=True)
+
     train(
         tr_files=tr_files,
         # iterations=100001,
-        iterations=1001,
+        iterations=101,
         show_every=20,
         show_pred=True,
         lsd_channels=lsd_channels,
         aff_channels=aff_channels,
-        show_in_napari=False)
+        show_in_napari=False,
+        save_path=save_path
+    )
