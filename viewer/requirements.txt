@@ -1,0 +1,4 @@
+git+https://github.com/trivoldus28/funlib.show.neuroglancer@daisy2_fix
+git+https://github.com/funkelab/funlib.persistence
+
+# ipython

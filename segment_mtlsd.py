@@ -1,6 +1,7 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
 
 from pathlib import Path
+import gunpowder.torch
 import gunpowder as gp
 import matplotlib.pyplot as plt
 import napari
@@ -9,8 +10,8 @@ import waterz
 import zarr
 from funlib.evaluate import rand_voi
 from scipy.ndimage import label
-from scipy.ndimage.filters import maximum_filter
-from scipy.ndimage.morphology import distance_transform_edt
+from scipy.ndimage import maximum_filter
+from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
 
 from params import input_size, output_size
@@ -107,7 +108,9 @@ def predict(
         },
         outputs={
             0: pred_lsds,
-            1: pred_affs})
+            1: pred_affs
+        }
+    )
 
     # this will scan in chunks equal to the input/output sizes of the respective arrays
     scan = gp.Scan(scan_request)
@@ -217,17 +220,7 @@ def get_segmentation(affinities, waterz_threshold, fragment_threshold):
     return segmentation, fragments, boundary_distances
 
 
-def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False):
-    # 'model_checkpoint_50000'
-    val_root = Path('~/data/zebrafinch_msplit/validation/').expanduser()
-    raw_files = val_root.glob('*.zarr')
-    raw_file = str(list(raw_files)[0])
-    raw_dataset = 'volumes/raw'  # todo: use more than 1 cube? not required for now
-
-    pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=show_in_napari)
-    voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
-    print("voi", voi)
-
+def mpl_vis(raw, segmentation, pred_affs, pred_lsds):
     n_channels = raw.shape[0]
     fig, axes = plt.subplots(
         3,
@@ -253,8 +246,72 @@ def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False):
     axes[2][8].imshow(np.squeeze(pred_lsds[8][pred_affs.shape[1] // 2]), cmap='jet')
     axes[2][9].imshow(np.squeeze(pred_lsds[9][pred_affs.shape[1] // 2]), cmap='jet')
     axes[1][3].imshow(create_lut(np.squeeze(segmentation)[segmentation.shape[0] // 2]))
-    # plt.show()
-    return fig, rand_voi_report["voi_split"], rand_voi_report["voi_merge"]
+    plt.show()
+
+
+def get_mean_report(reports: dict) -> dict:
+    # Get keys of second level, i.e. values of first level. These are the keys that will be used for aggregation.
+    report_keys = next(iter(reports.values()))
+    mean_report = {}
+    for k in report_keys:
+        kvalues = [reports[fname][k] for fname in reports.keys()]
+        try:
+            mean_report[k] = np.mean(kvalues)
+        except TypeError:
+            print(f'{k=}: {kvalues=} are not np.mean()-able')
+            # Ignore non-numerical values. TODO: If they are useful we can recurse into subdicts and apply mean over leaves
+            pass
+    return mean_report
+
+
+def get_per_cube_vois(reports: dict) -> dict:
+    per_cube_vois = {}
+    for fname in reports.keys():
+        per_cube_vois[f'voi_{fname}'] = reports[fname]['voi']
+    return per_cube_vois
+
+
+def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
+    per_cube_metrics = {}
+    for fname in reports.keys():
+        per_cube_metrics[f'{metric_name}_{fname}'] = reports[fname][metric_name]
+    return per_cube_metrics
+
+
+def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False, wandb_logger=None):
+    # 'model_checkpoint_50000'
+    val_root = Path('~/data/zebrafinch_msplit/validation/').expanduser()
+    raw_files = list(val_root.glob('*.zarr'))
+    raw_dataset = 'volumes/raw'
+
+    # raw_files = list(raw_files)[0]  # Limit to first file
+
+    rand_voi_reports = {}
+    assert len(raw_files) > 0
+
+    for raw_file in raw_files:
+        name = raw_file.name
+
+        pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
+        voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
+        rand_voi_report['voi'] = voi
+        print("voi", voi)
+
+        rand_voi_reports[name] = rand_voi_report
+
+
+    for name, rep in rand_voi_reports.items():
+        print(f'{name}:\n{rep}\n')
+
+    # mean_report = get_mean_report(rand_voi_reports)
+
+    # if wandb_logger is not None:
+    #     wandb_logger.log(mean_report, commit=False)
+    #     wandb_logger.log(rand_voi_reports, commit=True)
+
+    return rand_voi_reports
+
+    # return fig, rand_voi_report["voi_split"], rand_voi_report["voi_merge"]
 
 
 def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
@@ -315,4 +372,4 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
 
 
 if __name__ == "__main__":
-    eval_cube()
+    eval_cube(checkpoint='/cajal/u/mdraw/lsdex/experiments/zebrafinch/model_checkpoint_20')

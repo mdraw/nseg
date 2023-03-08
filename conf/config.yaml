@@ -1,0 +1,30 @@
+# Common path prefix
+path_prefix: ${oc.env:HOME}/lsdex
+
+# Version tag
+v: v1
+
+hydra:
+  run:
+    # Where to write logs and config copies
+    dir: ${path_prefix}/${v}/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+
+# -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
+tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
+val_root: ${path_prefix}/data/zebrafinch_msplit/validation/
+
+
+## Training config
+training:
+  # save_root: ${path_prefix}/${v}/seg_trainings/seg_trainings_${v}_tr-${tr_group}
+
+  iterations: 101
+  save_every: 10
+  seed: 0  # TODO
+
+  # Hyperparams
+  lr: 0.5e-4
+
+  show_gt: true
+  show_pred: true
+  show_in_napari: false

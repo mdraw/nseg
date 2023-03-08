@@ -1,6 +1,7 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/train_mtlsd.ipynb
 # conda install python=3.10 napari boost cython pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
 # pip install gunpowder matplotlib scikit-image scipy zarr tensorboard git+https://github.com/funkelab/funlib.evaluate git+https://github.com/funkelab/funlib.learn.torch.git git+https://github.com/funkey/waterz.git git+https://github.com/funkelab/lsd.git
+# pip install hydra-core omegaconf
 
 # TODO: Add ref to own gp fork
 
@@ -20,11 +21,16 @@ from lsd.train.gp import AddLocalShapeDescriptor
 from torch.utils import tensorboard
 from tqdm import tqdm
 
+import hydra
+from omegaconf import OmegaConf, DictConfig
+
+import wandb
+
 from params import input_size, output_size, batch_size, voxel_size
-from segment_mtlsd import eval_cube
+from segment_mtlsd import eval_cube, get_mean_report, get_per_cube_vois
 from shared import create_lut, get_mtlsdmodel
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 
 
 # @title utility function to view labels
@@ -179,17 +185,36 @@ class WeightedMSELoss(torch.nn.MSELoss):
         return loss1 + loss2
 
 
-def train(  # todo: validate?
-        tr_files,
-        iterations,
-        show_every,
-        show_gt=True,
-        show_pred=False,
-        lsd_channels=None,
-        aff_channels=None,
-        show_in_napari=False,
-        save_path=Path('.')
-):
+# def train(  # todo: validate?
+#         tr_files,
+#         iterations,
+#         show_every,
+#         show_gt=True,
+#         show_pred=False,
+#         lsd_channels=None,
+#         aff_channels=None,
+#         show_in_napari=False,
+#         save_path=Path('.')
+# ):
+def train(cfg: DictConfig) -> None:
+
+    tr_root = Path(cfg.tr_root)
+    val_root = Path(cfg.val_root)
+    tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
+    val_files = [str(fp) for fp in val_root.glob('*.zarr')]
+
+    # print(tr_root)
+    # print(tr_files)
+
+    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    save_path = Path(_hydra_run_dir)
+    # save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
+    # save_path.mkdir(parents=True)
+    logging.info(f'save_path: {save_path}')
+
+
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
     gt_lsds = gp.ArrayKey('GT_LSDS')
@@ -202,7 +227,7 @@ def train(  # todo: validate?
     model = get_mtlsdmodel()
 
     loss = WeightedMSELoss()
-    optimizer = torch.optim.Adam(lr=0.5e-4, params=model.parameters())
+    optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
 
     request = gp.BatchRequest()
     request.add(raw, input_size)
@@ -213,22 +238,6 @@ def train(  # todo: validate?
     request.add(gt_affs, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
-
-    # sources = tuple(
-    #     gp.ZarrSource(
-    #         './training_data.zarr',
-    #         {
-    #             raw: f'raw/{i}',
-    #             labels: f'labels/{i}'
-    #         },
-    #         {
-    #             raw: gp.ArraySpec(interpolatable=True),
-    #             labels: gp.ArraySpec(interpolatable=False)
-    #         }) +
-    #     gp.Normalize(raw) +
-    #     gp.RandomLocation()
-    #     for i in range(num_samples)
-    # )
 
     ## TODO: Padding?
     # labels_padding = gp.Coordinate((350,550,550))
@@ -309,9 +318,8 @@ def train(  # todo: validate?
 
     pipeline += gp.Stack(batch_size)
 
-    # pipeline += gp.PreCache(num_workers=10 #todo: use
-    #                        )
-    save_iter = show_every  # todo: increase
+    pipeline += gp.PreCache(num_workers=10)
+    save_every = cfg.training.save_every
     pipeline += Train(
         model,
         loss,
@@ -332,25 +340,36 @@ def train(  # todo: validate?
             5: affs_weights
         },
         # log_dir = "./logs/"
-        save_every=save_iter,  # todo: increase,
+        save_every=save_every,  # todo: increase,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
     )
 
     # Write tensorboard logs into common parent folder for all trainings for easier comparison
-    tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
+    # tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
     tb = tensorboard.SummaryWriter(save_path / "logs")
 
+    wandb.init(
+        # set the wandb project where this run will be logged
+        project="mlsd",
+
+        # track hyperparameters and run metadata
+        config=OmegaConf.to_container(
+            cfg, resolve=True, throw_on_missing=True
+        )
+    )
+
     with gp.build(pipeline):
-        progress = tqdm(range(iterations), dynamic_ncols=True)
+        progress = tqdm(range(cfg.training.iterations), dynamic_ncols=True)
         for i in progress:
             batch = pipeline.request_batch(request)
             # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
             end = request[labels].roi.get_end() / voxel_size
-            if (i + 1) % 10 or (i + 1) % save_iter == 0:
+            if (i + 1) % 10 or (i + 1) % save_every == 0:
                 tb.add_scalar("loss", batch.loss, batch.iteration)
-            if (i + 1) % save_iter == 0:
+                wandb.log({"loss": batch.loss})
+            if (i + 1) % save_every == 0:
                 for c in range(batch[raw].data.shape[1]):
                     imshow(tb=tb, it=batch.iteration,
                            raw=np.squeeze(batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]), channel=c)
@@ -360,28 +379,35 @@ def train(  # todo: validate?
                 if lsd_channels:
                     for n, c in lsd_channels.items():
 
-                        if show_gt:
+                        if cfg.training.show_gt:
                             imshow(tb=tb, it=batch.iteration, target=batch[gt_lsds].data, target_name='gt ' + n,
                                    channel=c)
-                        if show_pred:
+                        if cfg.training.show_pred:
                             imshow(tb=tb, it=batch.iteration, prediction=batch[pred_lsds].data,
                                    prediction_name='pred ' + n, channel=c)
 
                 if aff_channels:
                     for n, c in aff_channels.items():
 
-                        if show_gt:
+                        if cfg.training.show_gt:
                             imshow(tb=tb, it=batch.iteration, target=batch[gt_affs].data, target_name='gt ' + n,
                                    channel=c)
-                        if show_pred:
+                        if cfg.training.show_pred:
                             imshow(tb=tb, it=batch.iteration, target=batch[pred_affs].data, target_name='pred ' + n,
                                    channel=c)
 
-                fig, voi_split, voi_merge = eval_cube(f"model_checkpoint_{batch.iteration}", show_in_napari=show_in_napari)
-                tb.add_figure("eval", fig, batch.iteration)
-                tb.add_scalar("voi_split", voi_split, batch.iteration)
-                tb.add_scalar("voi_merge", voi_merge, batch.iteration)
-                tb.add_scalar("voi", voi_split + voi_merge, batch.iteration)
+                # fig, voi_split, voi_merge = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
+                rand_voi_reports = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
+                # print(rand_voi_reports)
+                mean_report = get_mean_report(rand_voi_reports)
+                wandb.log(mean_report, commit=False)
+                # wandb.log(rand_voi_reports, commit=True)
+                per_cube_vois = get_per_cube_vois(rand_voi_reports)
+                wandb.log(per_cube_vois, commit=True)
+                # tb.add_figure("eval", fig, batch.iteration)
+                # tb.add_scalar("voi_split", voi_split, batch.iteration)
+                # tb.add_scalar("voi_merge", voi_merge, batch.iteration)
+                # tb.add_scalar("voi", voi_split + voi_merge, batch.iteration)
 
                 tb.flush()
             progress.set_description(f'Training iteration {i}')
@@ -429,26 +455,31 @@ aff_channels = {
 
 # assert torch.cuda.is_available()
 
+@hydra.main(version_base='1.3', config_path='./conf', config_name='config')
+def main(cfg: DictConfig) -> None:
+    # tr_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/').expanduser()
+    # val_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/validation/').expanduser()
+    # tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
+    # val_files = [str(fp) for fp in val_root.glob('*.zarr')]
+
+    # timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+    # save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
+    # save_path.mkdir(parents=True)
+
+    # train(
+    #     tr_files=tr_files,
+    #     # iterations=100001,
+    #     iterations=101,
+    #     show_every=20,
+    #     show_pred=True,
+    #     lsd_channels=lsd_channels,
+    #     aff_channels=aff_channels,
+    #     show_in_napari=False,
+    #     save_path=save_path
+    # )
+    train(cfg)
+
 
 if __name__ == "__main__":
-    tr_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/').expanduser()
-    val_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/validation/').expanduser()
-    tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
-    val_files = [str(fp) for fp in val_root.glob('*.zarr')]
-
-    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
-
-    save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
-    save_path.mkdir(parents=True)
-
-    train(
-        tr_files=tr_files,
-        # iterations=100001,
-        iterations=101,
-        show_every=20,
-        show_pred=True,
-        lsd_channels=lsd_channels,
-        aff_channels=aff_channels,
-        show_in_napari=False,
-        save_path=save_path
-    )
+    main()
