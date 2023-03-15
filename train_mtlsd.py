@@ -5,9 +5,10 @@
 
 # TODO: Add ref to own gp fork
 
-import datetime
+import os
 import logging
 from pathlib import Path
+from typing import Any, Callable
 
 import matplotlib
 matplotlib.use('AGG')
@@ -27,25 +28,33 @@ from omegaconf import OmegaConf, DictConfig
 import wandb
 
 from params import input_size, output_size, batch_size, voxel_size
-from segment_mtlsd import eval_cube, get_mean_report, get_per_cube_vois
+from segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
 from shared import create_lut, get_mtlsdmodel
 
-# logging.basicConfig(level=logging.INFO)
+
+lsd_channels = {
+    'offset (y)': 0,
+    'offset (x)': 1,
+    'offset (z)': 2,
+    'orient (y)': 3,
+    'orient (x)': 4,
+    'orient (z)': 5,
+    'yx change': 6,  # todo: order correct?
+    'yz change': 7,
+    'xz change': 8,
+    'voxel count': 9
+}
+
+aff_channels = {
+    'affs_0': 0,  # todo: fix names
+    'affs_1': 1,
+    'affs_2': 2,
+    # 'affs_3': 3,
+    # 'affs_4': 4,
+    # 'affs_5': 5,
+}
 
 
-# @title utility function to view labels
-
-# matplotlib uses a default shader
-# we need to recolor as unique objects
-
-
-# @title utility  function to download / save data as zarr
-
-
-# @title utility function to view a batch
-
-# matplotlib.pyplot wrapper to view data
-# default shape should be 2 - 2d data
 
 def imshow(
         tb, it,
@@ -143,14 +152,6 @@ def imshow(
     # plt.show()
 
 
-# mtlsd model - designed to use lsds as an auxiliary learning task for improving affinities
-# raw --> lsds / affs
-
-# wrap model in a class. need two out heads, one for lsds, one for affs
-
-
-# combine the lsds and affs losses
-
 class WeightedMSELoss(torch.nn.MSELoss):
     def __init__(self):
         super(WeightedMSELoss, self).__init__()
@@ -184,36 +185,69 @@ class WeightedMSELoss(torch.nn.MSELoss):
 
         return loss1 + loss2
 
+def _get_include_fn(exts) -> Callable[[list[str]], bool]:
+    def include_fn(fn):
+        return any(str(fn).endswith(ext) for ext in exts)
+    return include_fn
 
-# def train(  # todo: validate?
-#         tr_files,
-#         iterations,
-#         show_every,
-#         show_gt=True,
-#         show_pred=False,
-#         lsd_channels=None,
-#         aff_channels=None,
-#         show_in_napari=False,
-#         save_path=Path('.')
-# ):
+
+def densify_labels(lab: np.ndarray, dtype=np.uint8) -> np.ndarray:
+    old_ids = np.unique(lab)
+    num_ids = old_ids.size
+    new_ids = range(num_ids)
+    dense_lab = np.zeros_like(lab, dtype=dtype)
+    for o, n in zip(old_ids, new_ids):
+        dense_lab[lab == o] = n
+    return dense_lab, num_ids
+
+
+# TODO: Squeeze singleton C dim?
+def get_zslice(vol, z_plane=None, squeeze=True, as_wandb=False):
+    """
+    Expects C, D, H, W or D, H, W volume and returns a 2D image slice compatible with `wandb.Image()`
+
+    """
+    # if vol.ndim == 5:  # N, C, D, H, W
+    #     vol = vol[0]  # Strip batch dim -> [C,] D, H, W
+    if z_plane is None:
+        z_plane = vol.shape[-3] // 2  # Get D // 2
+    slc = vol[..., z_plane, :, :]  # -> [C,] H, W
+    if squeeze and slc.shape[0] == 1:
+        slc = np.squeeze(slc, 0)  #  Strip singleton C dim
+    assert slc.ndim in [2, 3]
+    if slc.ndim == 3:  # C, H, W
+        slc = np.moveaxis(slc, 0, -1)
+    # Else: H, W, nothing to do
+    if as_wandb:
+        return wandb.Image(slc)
+    return slc
+
+
+def prefixkeys(dictionary: dict[str, Any], prefix: str) -> dict[str, Any]:
+    """Returns a dict with prefixed key names but same values."""
+    prefdict = {}
+    for key, value in dictionary.items():
+        prefdict[f'{prefix}{key}'] = value
+    return prefdict
+
+
 def train(cfg: DictConfig) -> None:
-
     tr_root = Path(cfg.tr_root)
     val_root = Path(cfg.val_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
     val_files = [str(fp) for fp in val_root.glob('*.zarr')]
 
-    # print(tr_root)
-    # print(tr_files)
-
-    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
-
+    # Get standard Python dict representation of omegaconf cfg (for wandb cfg logging)
+    _cfg_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    # Find the current hydra run dir
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    # Set general save_path (also for non-hydra-related outputs) to hydra run dir so we have everything in one place
     save_path = Path(_hydra_run_dir)
-    # save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
-    # save_path.mkdir(parents=True)
     logging.info(f'save_path: {save_path}')
-
+    num_workers = cfg.training.num_workers
+    if num_workers == 'auto':
+        num_workers = len(os.sched_getaffinity(0))  # Get cores available cpu cores for this (SLURM) job
+        logging.info(f'num_workers: automatically using all {num_workers} available cpu cores')
 
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
@@ -267,15 +301,15 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.RandomProvider()
 
+    # Note before re-enabling: SimpleAugement can fail! Why? Maybe axes are wrong and expect xyz?
     # pipeline += gp.SimpleAugment(transpose_only=[0, 1])  # todo: also rotate?
 
-    pipeline += gp.IntensityAugment(  # todo: channel wise!
+    pipeline += gp.IntensityAugment(
         raw,
         scale_min=0.9,
         scale_max=1.1,
         shift_min=-0.1,
         shift_max=0.1)
-    # todo: randomly reorder channels? (except for synapse markers homer/basoon)
     pipeline += gp.GrowBoundary(labels)
 
     # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
@@ -288,21 +322,6 @@ def train(cfg: DictConfig) -> None:
     )
 
     neighborhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
-
-    # neighborhood = [  # todo: order?
-    #         #    [0, -1],
-    #         #    [-1, 0]
-    #         [0, 0, -1],
-    #         [0, -1, 0],
-    #         [-1, 0, 0],
-    #         # [-1, 0, 0],
-    #         # [1, 0, 0],
-    #         # [0, -1, 0],
-    #         # [0, 1, 0],
-    #         # [0, 0, -1],
-    #         # [0, 0, 1],
-    # ]
-
 
     pipeline += gp.AddAffinities(
         affinity_neighborhood=neighborhood,
@@ -318,7 +337,8 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.Stack(batch_size)
 
-    pipeline += gp.PreCache(num_workers=10)
+    pipeline += gp.PreCache(num_workers=num_workers)
+
     save_every = cfg.training.save_every
     pipeline += Train(
         model,
@@ -349,15 +369,10 @@ def train(cfg: DictConfig) -> None:
     # tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
     tb = tensorboard.SummaryWriter(save_path / "logs")
 
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project="mlsd",
-
-        # track hyperparameters and run metadata
-        config=OmegaConf.to_container(
-            cfg, resolve=True, throw_on_missing=True
-        )
-    )
+    wandb.init(config=_cfg_dict, **cfg.wandb.init_cfg)
+    # Root directory where recursive code file discovery should start
+    _code_root = Path(__file__).parent
+    wandb.run.log_code(root=_code_root, include_fn=_get_include_fn(cfg.wandb.code_include_fn_exts))
 
     with gp.build(pipeline):
         progress = tqdm(range(cfg.training.iterations), dynamic_ncols=True)
@@ -368,8 +383,74 @@ def train(cfg: DictConfig) -> None:
             end = request[labels].roi.get_end() / voxel_size
             if (i + 1) % 10 or (i + 1) % save_every == 0:
                 tb.add_scalar("loss", batch.loss, batch.iteration)
-                wandb.log({"loss": batch.loss})
+                wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
             if (i + 1) % save_every == 0:
+                logging.info('logging batch visualizations')
+
+                # raw_cropped = batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]
+                # raw_sh = raw_cropped.shape
+                # raw_slice = raw_cropped[0, 0, rsh[2] // 2]
+
+                raw_data = batch[raw].data
+                # halfz_in = raw_data.shape[2] // 2
+                # full_raw_slice = raw_data[0, 0, halfz_in]
+                full_raw_slice = get_zslice(raw_data[0])
+
+                lab_data = batch[labels].data
+
+                # halfz_out = lab_data.shape[1] // 2
+                # lab_slice = lab_data[0, halfz_out]
+                lab_slice = get_zslice(lab_data[0])
+
+                # Center-crop raw slice to lab slice shape for overlay
+                raw_slice, _ = spatial_center_crop_nd(full_raw_slice, lab_slice, ndim_spatial=2)
+
+                if cfg.wandb.vis.enable_binary_labels:
+                    lab_slice = lab_slice > 0
+                    class_labels = {
+                        0: 'bg',
+                        1: 'fg',
+                    }
+                else:
+                    lab_slice, num_ids = densify_labels(lab_slice)
+                    class_labels = {i: f'c{i}' for i in range(num_ids)}
+
+
+                gt_seg_overlay_img = wandb.Image(
+                    raw_slice,
+                    masks={
+                        'gt_seg': {
+                            'mask_data': lab_slice,
+                            'class_labels': class_labels
+                        },
+                })
+
+                gt_affs_slice = get_zslice(batch[gt_affs].data[0])
+                gt_affs_img = wandb.Image(gt_affs_slice)
+
+                pred_affs_slice = get_zslice(batch[pred_affs].data[0])
+                pred_affs_img = wandb.Image(pred_affs_slice)
+
+                pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
+                pred_lsds3_img = wandb.Image(pred_lsds3_slice)
+
+                wandb.log(
+                    {
+                        'training/images/gt_seg_overlay': gt_seg_overlay_img,
+                        'training/images/gt_affs': gt_affs_img,
+                        'training/images/pred_affs': pred_affs_img,
+                        'training/images/pred_lsds3': pred_lsds3_img,
+                    },
+                    step=batch.iteration
+                )
+                # for c in range(3):
+                #     img = wandb.Image(gt_affs_slice[c])
+                # gt_affs_img = get_img(batch[gt_affs].data)
+
+
+                # import IPython ; IPython.embed(); raise SystemExit
+
+
                 for c in range(batch[raw].data.shape[1]):
                     imshow(tb=tb, it=batch.iteration,
                            raw=np.squeeze(batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]), channel=c)
@@ -397,13 +478,43 @@ def train(cfg: DictConfig) -> None:
                                    channel=c)
 
                 # fig, voi_split, voi_merge = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
-                rand_voi_reports = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
+                cube_eval_results = eval_cubes(
+                    cube_root=val_root,
+                    checkpoint=save_path / f'model_checkpoint_{batch.iteration}',
+                    show_in_napari=cfg.training.show_in_napari
+                )
+                rand_voi_reports = {name: cube_eval_results[name].rand_voi_report for name in cube_eval_results.keys()}
                 # print(rand_voi_reports)
                 mean_report = get_mean_report(rand_voi_reports)
-                wandb.log(mean_report, commit=False)
+                mean_report = prefixkeys(mean_report, prefix='validation/scalars/')
+                wandb.log(mean_report, step=batch.iteration)
+
+                cevr = next(iter(cube_eval_results.values()))
+
+                val_raw_img = get_zslice(cevr.raw, as_wandb=True)
+                val_gt_seg_img = get_zslice(cevr.gt_seg, as_wandb=True)
+                val_pred_seg_img = get_zslice(cevr.pred_seg, as_wandb=True)
+                val_pred_frag_img = get_zslice(cevr.pred_frag, as_wandb=True)
+                val_pred_affs_img = get_zslice(cevr.pred_affs, as_wandb=True)
+                val_pred_lsds3_img = get_zslice(cevr.pred_lsds[:3], as_wandb=True)
+
+                wandb.log(
+                    {
+                        'validation/images/raw': val_raw_img,
+                        'validation/images/gt_seg': val_gt_seg_img,
+                        'validation/images/pred_seg': val_pred_seg_img,
+                        'validation/images/pred_frag': val_pred_frag_img,
+                        'validation/images/pred_affs': val_pred_affs_img,
+                        'validation/images/pred_lsds3': val_pred_lsds3_img,
+                    },
+                    step=batch.iteration
+                )
+
                 # wandb.log(rand_voi_reports, commit=True)
-                per_cube_vois = get_per_cube_vois(rand_voi_reports)
-                wandb.log(per_cube_vois, commit=True)
+                if cfg.wandb.enable_per_cube_metrics:
+                    per_cube_vois = get_per_cube_metrics(rand_voi_reports, metric_name='voi')
+                    per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
+                    wandb.log(per_cube_vois, commit=True, step=batch.iteration)
                 # tb.add_figure("eval", fig, batch.iteration)
                 # tb.add_scalar("voi_split", voi_split, batch.iteration)
                 # tb.add_scalar("voi_merge", voi_merge, batch.iteration)
@@ -415,69 +526,8 @@ def train(cfg: DictConfig) -> None:
     # todo: save weights?
 
 
-# view a batch of ground truth lsds/affs, no need to show predicted lsds/affs yet
-
-lsd_channels = {
-    'offset (y)': 0,
-    'offset (x)': 1,
-    'offset (z)': 2,
-    'orient (y)': 3,
-    'orient (x)': 4,
-    'orient (z)': 5,
-    'yx change': 6,  # todo: order correct?
-    'yz change': 7,
-    'xz change': 8,
-    'voxel count': 9
-}
-
-# just view first y affs
-# aff_channels = {'affs': 0}
-
-# train(
-#    iterations=1,
-#    show_every=1,
-#    lsd_channels=lsd_channels,
-#    aff_channels=aff_channels)
-
-# lets just view the mean offset y channels
-# train for ~1k iterations, view every 100th batch
-# show the prediction as well as the ground truth
-
-# lsd_channels = {'offset (y)': 0}
-aff_channels = {
-    'affs_0': 0,  # todo: fix names
-    'affs_1': 1,
-    'affs_2': 2,
-    # 'affs_3': 3,
-    # 'affs_4': 4,
-    # 'affs_5': 5,
-}
-
-# assert torch.cuda.is_available()
-
 @hydra.main(version_base='1.3', config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
-    # tr_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/').expanduser()
-    # val_root = Path('/cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/validation/').expanduser()
-    # tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
-    # val_files = [str(fp) for fp in val_root.glob('*.zarr')]
-
-    # timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
-
-    # save_path = Path('/cajal/scratch/projects/misc/mdraw/lsd-results/training') / f'tr-{timestamp}'
-    # save_path.mkdir(parents=True)
-
-    # train(
-    #     tr_files=tr_files,
-    #     # iterations=100001,
-    #     iterations=101,
-    #     show_every=20,
-    #     show_pred=True,
-    #     lsd_channels=lsd_channels,
-    #     aff_channels=aff_channels,
-    #     show_in_napari=False,
-    #     save_path=save_path
-    # )
     train(cfg)
 
 

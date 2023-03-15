@@ -11,16 +11,32 @@ hydra:
 
 # -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
 tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
-val_root: ${path_prefix}/data/zebrafinch_msplit/validation/
+val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
 
+wandb:
+  ## These are directly passed to wandb.init() as **kwargs
+  init_cfg:
+    dir: ${path_prefix}/${v}/
+    entity: mdth
+    project: mlsd
+    tags:
+      - mtlsd
+  # Visualization options
+  vis:
+    enable_binary_labels: true
+  # Log metrics per cube with filename suffix in addition to mean metrics
+  enable_per_cube_metrics: true
+  # Include only files with these extensions
+  code_include_fn_exts: ['.py', '.json', '.yaml', '.txt']
 
 ## Training config
 training:
   # save_root: ${path_prefix}/${v}/seg_trainings/seg_trainings_${v}_tr-${tr_group}
 
-  iterations: 101
-  save_every: 10
+  iterations: 100001
+  save_every: 250
   seed: 0  # TODO
+  num_workers: auto
 
   # Hyperparams
   lr: 0.5e-4

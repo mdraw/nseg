@@ -1,6 +1,8 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 import gunpowder.torch
 import gunpowder as gp
 import matplotlib.pyplot as plt
@@ -16,6 +18,66 @@ from skimage.segmentation import watershed
 
 from params import input_size, output_size
 from shared import create_lut, get_mtlsdmodel
+
+
+def spatial_center_crop_nd(large, small, ndim_spatial=2):
+    """Return center-cropped version of `large` image, with spatial dims cropped to spatial shape of `small` image"""
+    ndim_nonspatial = large.ndim - ndim_spatial
+
+    # Get spatial shapes of the two input images
+    sha = np.array(large.shape[-ndim_spatial:])
+    shb = np.array(small.shape[-ndim_spatial:])
+
+    assert np.all(sha >= shb)
+
+    # Compute the starting and ending indices for each dimension
+    lo = (sha - shb) // 2
+    hi = lo + shb
+
+    # Calculate slice indices
+    nonspatial_slice = [  # Slicing all available content in these dims.
+        slice(0, None) for _ in range(ndim_nonspatial)
+    ]
+    spatial_slice = [  # Slice only the content within the coordinate bounds
+        slice(lo[i], hi[i]) for i in range(ndim_spatial)
+    ]
+    full_slice = tuple(nonspatial_slice + spatial_slice)
+
+    # Perform the center crop
+    cropped = large[full_slice]
+
+    return cropped, small
+
+
+def cr(a, b, ndim_spatial=2):
+    # Number of nonspatial axes (like the C axis). Usually this is one
+    ndim_nonspatial = a.ndim - ndim_spatial
+    # Get the shapes of the two input images
+    sha = np.array(a.shape)
+    shb = np.array(b.shape)
+    # Compute the minimum shape along each dimension
+    min_shape = np.minimum(sha, shb)
+    # Compute the starting and ending indices for each dimension
+    lo = (sha - min_shape) // 2
+    hi = lo + min_shape
+
+    # Calculate slice indices
+    nonspatial_slice = [  # Slicing all available content in these dims.
+        slice(0, a.shape[i]) for i in range(ndim_nonspatial)
+    ]
+    spatial_slice = [  # Slice only the content within the coordinate bounds
+        slice(lo[i], hi[i]) for i in range(ndim_spatial)
+    ]
+    full_slice = tuple(nonspatial_slice + spatial_slice)
+    a_cropped = a[full_slice]
+    if b is None:
+        return a_cropped, b
+
+    if b.ndim == a.ndim - 1:  # a: (C, [D,], H, W), b: ([D,], H, W)
+        full_slice = full_slice[1:]  # Remove C axis from slice because b doesn't have it
+    b_cropped = b[full_slice]
+
+    return a_cropped, b_cropped
 
 
 
@@ -77,6 +139,7 @@ def predict(
     scan_request.add(pred_lsds, output_size)
     scan_request.add(pred_affs, output_size)
 
+    # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
     context = (input_size - output_size) / 2
 
     source = gp.ZarrSource(
@@ -246,7 +309,8 @@ def mpl_vis(raw, segmentation, pred_affs, pred_lsds):
     axes[2][8].imshow(np.squeeze(pred_lsds[8][pred_affs.shape[1] // 2]), cmap='jet')
     axes[2][9].imshow(np.squeeze(pred_lsds[9][pred_affs.shape[1] // 2]), cmap='jet')
     axes[1][3].imshow(create_lut(np.squeeze(segmentation)[segmentation.shape[0] // 2]))
-    plt.show()
+    # plt.show()
+    return fig, axes
 
 
 def get_mean_report(reports: dict) -> dict:
@@ -258,7 +322,7 @@ def get_mean_report(reports: dict) -> dict:
         try:
             mean_report[k] = np.mean(kvalues)
         except TypeError:
-            print(f'{k=}: {kvalues=} are not np.mean()-able')
+            # print(f'{k=}: {kvalues=} are not np.mean()-able')
             # Ignore non-numerical values. TODO: If they are useful we can recurse into subdicts and apply mean over leaves
             pass
     return mean_report
@@ -278,40 +342,47 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
     return per_cube_metrics
 
 
-def eval_cube(checkpoint='model_checkpoint_100000', show_in_napari=False, wandb_logger=None):
+@dataclass
+class CubeEvalResult:
+    """
+    segmentation.shape=(150, 150, 150)
+    raw.shape=(1, 350, 550, 550)
+    pred_affs.shape=(3, 330, 530, 530)
+    pred_lsds.shape=(10, 330, 530, 530)
+    """
+    rand_voi_report: dict[str, Any]
+    raw: np.ndarray
+    gt_seg: np.ndarray
+    pred_frag: np.ndarray
+    pred_seg: np.ndarray
+    # gt_affs: np.ndarray
+    # gt_lsds: np.ndarray
+    pred_affs: np.ndarray
+    pred_lsds: np.ndarray
+
+
+def eval_cubes(cube_root, checkpoint, show_in_napari=False):
     # 'model_checkpoint_50000'
-    val_root = Path('~/data/zebrafinch_msplit/validation/').expanduser()
+    val_root = Path(cube_root)
     raw_files = list(val_root.glob('*.zarr'))
     raw_dataset = 'volumes/raw'
 
-    # raw_files = list(raw_files)[0]  # Limit to first file
-
+    cube_eval_results: dict[str, CubeEvalResult] = {}
     rand_voi_reports = {}
     assert len(raw_files) > 0
 
     for raw_file in raw_files:
         name = raw_file.name
 
-        pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
-        voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
-        rand_voi_report['voi'] = voi
-        print("voi", voi)
-
-        rand_voi_reports[name] = rand_voi_report
+        # pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
+        cevr = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
+        cube_eval_results[name] = cevr
 
 
     for name, rep in rand_voi_reports.items():
         print(f'{name}:\n{rep}\n')
 
-    # mean_report = get_mean_report(rand_voi_reports)
-
-    # if wandb_logger is not None:
-    #     wandb_logger.log(mean_report, commit=False)
-    #     wandb_logger.log(rand_voi_reports, commit=True)
-
-    return rand_voi_reports
-
-    # return fig, rand_voi_report["voi_split"], rand_voi_report["voi_merge"]
+    return cube_eval_results
 
 
 def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
@@ -325,27 +396,30 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
 
     ]
     )
-    # affs shape: 3, h, w
-    # waterz agglomerate requires 4d affs (c, d, h, w) - add fake z dim
-    # ws_affs = np.expand_dims(ws_affs, axis=1)
-    # affs shape: 3, 1, h, w
     # just test a 0.5 threshold. higher thresholds will merge more, lower thresholds will split more
-    threshold = 0.2  # 5 #0.1 #0.5
-    segmentation, fragments, boundary_distances = get_segmentation(ws_affs, threshold, fragment_threshold=0.5
-                                                                   # 0.5#0.9 #todo: tune
-                                                                   )
+    threshold = 0.2
+    fragment_threshold = 0.5
+    pred_seg, pred_frag, boundary_distances = get_segmentation(
+        ws_affs,
+        waterz_threshold=threshold,
+        fragment_threshold=fragment_threshold
+    )
     data = zarr.open(raw_file, 'r')
     print('Before roi report...')
-    labels = data.volumes.labels.neuron_ids
+    gt_seg = np.array(data.volumes.labels.neuron_ids)
+
     # labels = labels[100:-100, 200:-200, 200:-200]
     # segmentation = segmentation[100:-100, 200:-200, 200:-200]
-    segmentation, labels = center_crop(segmentation, labels)
+    pred_seg, gt_seg = center_crop(pred_seg, gt_seg)
     # TODO: Also crop preds, fragments, ...
     rand_voi_report = rand_voi(
-        labels,
-        segmentation,  # segment_ids,
+        gt_seg,
+        pred_seg,  # segment_ids,
         return_cluster_scores=False
     )
+    voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
+    rand_voi_report['voi'] = voi
+
     if show_in_napari:
         # fragments_new = np.reshape(np.arange(fragments.size, dtype=np.uint64), fragments.shape) + 1
         # generator = waterz.agglomerate(
@@ -364,12 +438,25 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
         viewer.add_image(raw[:, 10:-10, 10:-10, 10:-10], channel_axis=0, name="raw", opacity=0.2, gamma=2)
         # viewer.add_image(pred_affs, channel_axis=0, name="affs")
         # viewer.add_image(boundary_distances, name="boundary_distances")
-        viewer.add_labels(segmentation, name="seg")
+        viewer.add_labels(pred_seg, name="seg")
         viewer.add_labels(fragments, name="frag")
-        viewer.add_labels(labels, name="gt")
+        viewer.add_labels(gt_seg, name="gt")
         napari.run()
-    return pred_affs, pred_lsds, rand_voi_report, raw, segmentation
+
+    eval_result = CubeEvalResult(
+        raw=raw,
+        pred_affs=pred_affs,
+        pred_lsds=pred_lsds,
+        pred_seg=pred_seg,
+        pred_frag=pred_frag,
+        gt_seg=gt_seg,
+        rand_voi_report=rand_voi_report,
+    )
+    return eval_result
 
 
 if __name__ == "__main__":
-    eval_cube(checkpoint='/cajal/u/mdraw/lsdex/experiments/zebrafinch/model_checkpoint_20')
+    eval_cubes(
+        val_root=Path('/cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation/').expanduser(),
+        checkpoint='/cajal/u/mdraw/lsdex/experiments/zebrafinch/model_checkpoint_20'
+    )
