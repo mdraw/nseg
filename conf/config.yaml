@@ -13,6 +13,8 @@ hydra:
 tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
 val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
 
+enable_zarr_results: true
+
 wandb:
   ## These are directly passed to wandb.init() as **kwargs
   init_cfg:

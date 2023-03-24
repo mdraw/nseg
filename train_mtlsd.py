@@ -481,9 +481,10 @@ def train(cfg: DictConfig) -> None:
                 cube_eval_results = eval_cubes(
                     cube_root=val_root,
                     checkpoint=save_path / f'model_checkpoint_{batch.iteration}',
+                    result_zarr_root=save_path
                     show_in_napari=cfg.training.show_in_napari
                 )
-                rand_voi_reports = {name: cube_eval_results[name].rand_voi_report for name in cube_eval_results.keys()}
+                rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
                 # print(rand_voi_reports)
                 mean_report = get_mean_report(rand_voi_reports)
                 mean_report = prefixkeys(mean_report, prefix='validation/scalars/')
@@ -497,6 +498,8 @@ def train(cfg: DictConfig) -> None:
                 val_pred_frag_img = get_zslice(cevr.pred_frag, as_wandb=True)
                 val_pred_affs_img = get_zslice(cevr.pred_affs, as_wandb=True)
                 val_pred_lsds3_img = get_zslice(cevr.pred_lsds[:3], as_wandb=True)
+
+                # TODO: Looks like frag and seg are being binarized during logging but we don't want that!
 
                 wandb.log(
                     {

@@ -19,6 +19,8 @@ from skimage.segmentation import watershed
 from params import input_size, output_size
 from shared import create_lut, get_mtlsdmodel
 
+import eval_utils
+
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
     """Return center-cropped version of `large` image, with spatial dims cropped to spatial shape of `small` image"""
@@ -248,13 +250,10 @@ def watershed_from_affinities(
         affs,
         max_affinity_value=1.0,
         id_offset=0,
-        min_seed_distance=10, fragment_threshold=0.5):
-    mean_affs = (1 / 3) * \
-                (affs[0] +
-                 affs[1] + affs[2])  # todo: other affinities? *0.5
-
-    # fragments = np.zeros(mean_affs.shape, dtype=np.uint64)
-
+        min_seed_distance=10,
+        fragment_threshold=0.5
+):
+    mean_affs = np.mean(affs, axis=0)
     boundary_mask = mean_affs > (fragment_threshold * max_affinity_value)
     boundary_distances = distance_transform_edt(boundary_mask)
 
@@ -342,40 +341,24 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
     return per_cube_metrics
 
 
-@dataclass
-class CubeEvalResult:
-    """
-    segmentation.shape=(150, 150, 150)
-    raw.shape=(1, 350, 550, 550)
-    pred_affs.shape=(3, 330, 530, 530)
-    pred_lsds.shape=(10, 330, 530, 530)
-    """
-    rand_voi_report: dict[str, Any]
-    raw: np.ndarray
-    gt_seg: np.ndarray
-    pred_frag: np.ndarray
-    pred_seg: np.ndarray
-    # gt_affs: np.ndarray
-    # gt_lsds: np.ndarray
-    pred_affs: np.ndarray
-    pred_lsds: np.ndarray
 
 
-def eval_cubes(cube_root, checkpoint, show_in_napari=False):
+def eval_cubes(cube_root, checkpoint, result_zarr_root, show_in_napari=False):
     # 'model_checkpoint_50000'
     val_root = Path(cube_root)
     raw_files = list(val_root.glob('*.zarr'))
     raw_dataset = 'volumes/raw'
 
-    cube_eval_results: dict[str, CubeEvalResult] = {}
+    cube_eval_results: dict[str, eval_utils.CubeEvalResult] = {}
     rand_voi_reports = {}
     assert len(raw_files) > 0
 
     for raw_file in raw_files:
         name = raw_file.name
+        result_zarr_path = Path(result_zarr_root) / f'results_{name}'
 
         # pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
-        cevr = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
+        cevr = run_eval(checkpoint, raw_dataset, str(raw_file), result_zarr_path=result_zarr_path, show_in_napari=show_in_napari)
         cube_eval_results[name] = cevr
 
 
@@ -385,15 +368,18 @@ def eval_cubes(cube_root, checkpoint, show_in_napari=False):
     return cube_eval_results
 
 
-def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
+def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari=False):
     raw, pred_lsds, pred_affs = predict(checkpoint, raw_file, raw_dataset)
+
+    data = zarr.open(raw_file, 'r')
+    gt_seg = np.array(data.volumes.labels.neuron_ids)
+
     # watershed assumes 3d arrays, create fake channel dim (call these watershed affs - ws_affs)
     ws_affs = np.stack([
         # np.zeros_like(pred_affs[0]),
         pred_affs[0],  # todo
         pred_affs[1],
         pred_affs[2],
-
     ]
     )
     # just test a 0.5 threshold. higher thresholds will merge more, lower thresholds will split more
@@ -404,12 +390,7 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
         waterz_threshold=threshold,
         fragment_threshold=fragment_threshold
     )
-    data = zarr.open(raw_file, 'r')
-    print('Before roi report...')
-    gt_seg = np.array(data.volumes.labels.neuron_ids)
 
-    # labels = labels[100:-100, 200:-200, 200:-200]
-    # segmentation = segmentation[100:-100, 200:-200, 200:-200]
     pred_seg, gt_seg = center_crop(pred_seg, gt_seg)
     # TODO: Also crop preds, fragments, ...
     rand_voi_report = rand_voi(
@@ -443,20 +424,25 @@ def run_eval(checkpoint, raw_dataset, raw_file, show_in_napari=False):
         viewer.add_labels(gt_seg, name="gt")
         napari.run()
 
-    eval_result = CubeEvalResult(
-        raw=raw,
-        pred_affs=pred_affs,
-        pred_lsds=pred_lsds,
-        pred_seg=pred_seg,
-        pred_frag=pred_frag,
-        gt_seg=gt_seg,
-        rand_voi_report=rand_voi_report,
+    eval_result = eval_utils.CubeEvalResult(
+        report=rand_voi_report,
+        arrays=dict(
+            raw=raw,
+            pred_affs=pred_affs,
+            pred_lsds=pred_lsds,
+            pred_seg=pred_seg,
+            pred_frag=pred_frag,
+            gt_seg=gt_seg,
+        )
     )
+    eval_result.write_zarr(result_zarr_path)
+
     return eval_result
 
 
 if __name__ == "__main__":
     eval_cubes(
-        val_root=Path('/cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation/').expanduser(),
-        checkpoint='/cajal/u/mdraw/lsdex/experiments/zebrafinch/model_checkpoint_20'
+        cube_root=Path('/cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation_n1/').expanduser(),
+        checkpoint='/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/2023-03-15_13-42-24/model_checkpoint_89500',
+        result_zarr_root='/cajal/scratch/projects/misc/mdraw/lsdex/v1/eval_zarr/'
     )
