@@ -266,18 +266,87 @@ def watershed_from_affinities(
     return ret[0], boundary_distances
 
 
-# @title segmentation wrapper
-def get_segmentation(affinities, waterz_threshold, fragment_threshold):
+def get_segmentation(affinities, waterz_threshold=0.043, fragment_threshold=0.5, gt_seg=None):
     fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
-    thresholds = [waterz_threshold]  # todo: add 0?
 
     generator = waterz.agglomerate(
         affs=affinities.astype(np.float32),  # .squeeze(1),
         fragments=np.copy(fragments),  # .squeeze(0),
-        thresholds=thresholds,
+        thresholds=[waterz_threshold],
     )
-
     segmentation = next(generator)
+
+    return segmentation, fragments, boundary_distances
+
+
+def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold=0.5, gt_seg=None):
+    fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
+
+    vois = []
+
+    # threshs = np.arange(0.0, 2.0, 0.1)
+    # threshs = np.arange(0.043, 0.43, 0.0001)
+
+    generator = waterz.agglomerate(
+        affs=affinities.astype(np.float32),  # .squeeze(1),
+        fragments=np.copy(fragments),  # .squeeze(0),
+        thresholds=waterz_thresholds,
+    )
+    for thresh, segmentation in zip(waterz_thresholds, generator, strict=True):
+        segmentation, gt_seg = center_crop(segmentation, gt_seg)
+
+        rand_voi_report = rand_voi(
+            gt_seg,
+            segmentation,  # segment_ids,
+            return_cluster_scores=False
+        )
+        voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
+        print(f'VOI: {voi}')
+        vois.append(voi)
+
+    for t, v in zip(waterz_thresholds, vois, strict=True):
+        print(f'{t=}, {v=}')
+
+    _min_voi_idx = np.argmin(vois)
+    min_voi = vois[_min_voi_idx]
+    argmin_thresh = waterz_thresholds[_min_voi_idx]
+
+    print(f'Optimum threshold: {argmin_thresh}, with VOI {min_voi}')
+
+    return segmentation, fragments, boundary_distances
+
+
+def get_scoring_segmentation(affinities, fragment_threshold=0.5, epsilon_agglomerate=0, gt_seg=None):
+    fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
+
+    # Based on parralel_fragments.watershed_in_block(), see
+    #  https://github.com/funkelab/lsd/blob/b6aee2fd0c87bc70a52ea77e85f24cc48bc4f437/lsd/post/parallel_fragments.py#L149
+    # TODO: Haven't managed to get good results from this yet. Maybe some arguments have to be changed?
+    assert epsilon_agglomerate > 0
+
+    print(f'Performing initial fragment agglomeration until {epsilon_agglomerate}')
+
+    # TODO: Multiply with mask
+    fragments_data = fragments.astype(np.uint64)
+    affs = affinities.astype(np.float32)
+
+    generator = waterz.agglomerate(
+        affs=affs,
+        thresholds=[epsilon_agglomerate],
+        fragments=fragments_data,
+        scoring_function='OneMinus<HistogramQuantileAffinity<RegionGraphType, 25, ScoreValue, 256, false>>',
+        discretize_queue=256,
+        return_merge_history=False,
+        return_region_graph=False,
+        gt=gt_seg
+    )
+    fragments_data[:] = next(generator)
+
+    # cleanup generator
+    for _ in generator:
+        pass
+
+    segmentation = fragments_data
 
     return segmentation, fragments, boundary_distances
 
@@ -382,13 +451,15 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari
         pred_affs[2],
     ]
     )
-    # just test a 0.5 threshold. higher thresholds will merge more, lower thresholds will split more
-    threshold = 0.2
+    # higher thresholds will merge more, lower thresholds will split more
+    threshold = 0.043
     fragment_threshold = 0.5
+
     pred_seg, pred_frag, boundary_distances = get_segmentation(
         ws_affs,
         waterz_threshold=threshold,
-        fragment_threshold=fragment_threshold
+        fragment_threshold=fragment_threshold,
+        gt_seg=gt_seg
     )
 
     pred_seg, gt_seg = center_crop(pred_seg, gt_seg)
@@ -436,6 +507,8 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari
         )
     )
     eval_result.write_zarr(result_zarr_path)
+
+    print(f'VOI: {voi}')
 
     return eval_result
 
