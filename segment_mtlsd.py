@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import torch
 import gunpowder.torch
 import gunpowder as gp
 import matplotlib.pyplot as plt
@@ -17,7 +18,9 @@ from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
 
 from params import input_size, output_size
-from shared import create_lut, get_mtlsdmodel
+from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
+
+from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
 import eval_utils
 
@@ -321,7 +324,7 @@ def get_scoring_segmentation(affinities, fragment_threshold=0.5, epsilon_agglome
 
     # Based on parralel_fragments.watershed_in_block(), see
     #  https://github.com/funkelab/lsd/blob/b6aee2fd0c87bc70a52ea77e85f24cc48bc4f437/lsd/post/parallel_fragments.py#L149
-    # TODO: Haven't managed to get good results from this yet. Maybe some arguments have to be changed?
+    # TODO: Haven't managed to get good results from this yet. Maybe some arguments have to be changed? scoring_function?
     assert epsilon_agglomerate > 0
 
     print(f'Performing initial fragment agglomeration until {epsilon_agglomerate}')
@@ -412,7 +415,7 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
 
 
 
-def eval_cubes(cube_root, checkpoint, result_zarr_root, show_in_napari=False):
+def eval_cubes(cube_root, checkpoint, result_zarr_root=None, show_in_napari=False):
     # 'model_checkpoint_50000'
     val_root = Path(cube_root)
     raw_files = list(val_root.glob('*.zarr'))
@@ -424,7 +427,7 @@ def eval_cubes(cube_root, checkpoint, result_zarr_root, show_in_napari=False):
 
     for raw_file in raw_files:
         name = raw_file.name
-        result_zarr_path = Path(result_zarr_root) / f'results_{name}'
+        result_zarr_path = None if result_zarr_root is None else Path(result_zarr_root) / f'results_{name}'
 
         # pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
         cevr = run_eval(checkpoint, raw_dataset, str(raw_file), result_zarr_path=result_zarr_path, show_in_napari=show_in_napari)
@@ -437,20 +440,53 @@ def eval_cubes(cube_root, checkpoint, result_zarr_root, show_in_napari=False):
     return cube_eval_results
 
 
-def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari=False):
+def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_napari=False):
     raw, pred_lsds, pred_affs = predict(checkpoint, raw_file, raw_dataset)
 
     data = zarr.open(raw_file, 'r')
     gt_seg = np.array(data.volumes.labels.neuron_ids)
 
-    # watershed assumes 3d arrays, create fake channel dim (call these watershed affs - ws_affs)
-    ws_affs = np.stack([
-        # np.zeros_like(pred_affs[0]),
-        pred_affs[0],  # todo
-        pred_affs[1],
-        pred_affs[2],
-    ]
+    # # watershed assumes 3d arrays, create fake channel dim (call these watershed affs - ws_affs)
+    # ws_affs = np.stack([
+    #     # np.zeros_like(pred_affs[0]),
+    #     pred_affs[0],  # todo
+    #     pred_affs[1],
+    #     pred_affs[2],
+    # ])
+
+    ws_affs = pred_affs
+
+    # Get GT affs and LSDs
+
+    # TODO: Get from cfg, make sure to stay consistent with training setup
+    aff_nhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+    gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
+    cropped_pred_affs, _ = center_crop(pred_affs, gt_affs)
+
+    gt_lsds = get_local_shape_descriptors(
+        segmentation=gt_seg,
+        sigma=(120,) * 3,
+        downsample=2,
     )
+
+    cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
+
+    lsds_weights = 1.
+    affs_weights = 1.
+
+    eval_loss = WeightedMSELoss()(
+        lsds_prediction=torch.as_tensor(cropped_pred_lsds),
+        lsds_target=torch.as_tensor(gt_lsds),
+        lsds_weights=torch.as_tensor(lsds_weights),
+        affs_prediction=torch.as_tensor(cropped_pred_affs),
+        affs_target=torch.as_tensor(gt_affs),
+        affs_weights=torch.as_tensor(affs_weights),
+    )
+
+    print(f'Eval loss: {eval_loss.item():.3f}')
+
+    # print(f'{pred_affs.shape=}, {ws_affs.shape=}')
+
     # higher thresholds will merge more, lower thresholds will split more
     threshold = 0.043
     fragment_threshold = 0.5
@@ -462,15 +498,17 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari
         gt_seg=gt_seg
     )
 
-    pred_seg, gt_seg = center_crop(pred_seg, gt_seg)
-    # TODO: Also crop preds, fragments, ...
+    cropped_pred_seg, _ = center_crop(pred_seg, gt_seg)
+
     rand_voi_report = rand_voi(
         gt_seg,
-        pred_seg,  # segment_ids,
+        cropped_pred_seg,  # segment_ids,
         return_cluster_scores=False
     )
     voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
     rand_voi_report['voi'] = voi
+
+    rand_voi_report['val_loss'] = eval_loss
 
     if show_in_napari:
         # fragments_new = np.reshape(np.arange(fragments.size, dtype=np.uint64), fragments.shape) + 1
@@ -504,9 +542,13 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path, show_in_napari
             pred_seg=pred_seg,
             pred_frag=pred_frag,
             gt_seg=gt_seg,
+            gt_affs=gt_affs,
+            gt_lsds=gt_lsds,
         )
     )
-    eval_result.write_zarr(result_zarr_path)
+
+    if result_zarr_path is not None:
+        eval_result.write_zarr(result_zarr_path)
 
     print(f'VOI: {voi}')
 

@@ -29,7 +29,7 @@ import wandb
 
 from params import input_size, output_size, batch_size, voxel_size
 from segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from shared import create_lut, get_mtlsdmodel
+from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
 
 
 lsd_channels = {
@@ -152,39 +152,6 @@ def imshow(
     # plt.show()
 
 
-class WeightedMSELoss(torch.nn.MSELoss):
-    def __init__(self):
-        super(WeightedMSELoss, self).__init__()
-
-    def _calc_loss(self, pred, target, weights):
-
-        scaled = weights * (pred - target) ** 2
-
-        if len(torch.nonzero(scaled)) != 0:
-            mask = torch.masked_select(scaled, torch.gt(weights, 0))
-            loss = torch.mean(mask)
-
-        else:
-            loss = torch.mean(scaled)
-
-        return loss
-
-    def forward(
-            self,
-            lsds_prediction,
-            lsds_target,
-            lsds_weights,
-            affs_prediction,
-            affs_target,
-            affs_weights,
-    ):
-
-        # calc each loss and combine
-        loss1 = self._calc_loss(lsds_prediction, lsds_target, lsds_weights)
-        loss2 = self._calc_loss(affs_prediction, affs_target, affs_weights)
-
-        return loss1 + loss2
-
 def _get_include_fn(exts) -> Callable[[list[str]], bool]:
     def include_fn(fn):
         return any(str(fn).endswith(ext) for ext in exts)
@@ -275,12 +242,15 @@ def train(cfg: DictConfig) -> None:
 
     ## TODO: Padding?
     # labels_padding = gp.Coordinate((350,550,550))
+    labels_padding = gp.Coordinate((840, 720, 720))
+
     sources = tuple(
         gp.ZarrSource(
             tr_file,
             {
                 raw: 'volumes/raw',
-                labels: 'volumes/labels/neuron_ids'
+                labels: 'volumes/labels/neuron_ids',
+                # TODO: labels_mask?
             },
             {
                 raw: gp.ArraySpec(interpolatable=True),
@@ -289,7 +259,7 @@ def train(cfg: DictConfig) -> None:
         gp.Normalize(raw) +
         # gp.Squeeze([raw], axis=0) +
         # gp.Pad(raw, None) +
-        # gp.Pad(labels, labels_padding) +
+        gp.Pad(labels, labels_padding) +
         gp.RandomLocation()
         for tr_file in tr_files
     )
@@ -301,33 +271,47 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.RandomProvider()
 
+    # pipeline += gp.ElasticAugment(
+    #     control_point_spacing=[4, 4, 10],
+    #     jitter_sigma=[0, 2, 2],
+    #     rotation_interval=[0, np.pi / 2.0],
+    #     prob_slip=0.05,
+    #     prob_shift=0.05,
+    #     max_misalign=10,
+    #     subsample=8,
+    # )
+
     # Note before re-enabling: SimpleAugement can fail! Why? Maybe axes are wrong and expect xyz?
     # pipeline += gp.SimpleAugment(transpose_only=[0, 1])  # todo: also rotate?
+    # pipeline += gp.SimpleAugment(transpose_only=[1, 2])
 
     pipeline += gp.IntensityAugment(
         raw,
         scale_min=0.9,
         scale_max=1.1,
         shift_min=-0.1,
-        shift_max=0.1)
-    pipeline += gp.GrowBoundary(labels)
+        shift_max=0.1,
+        z_section_wise=True
+    )
+    pipeline += gp.GrowBoundary(labels, steps=1, only_xy=True)
 
     # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
     pipeline += AddLocalShapeDescriptor(
         labels,
         gt_lsds,
         lsds_mask=lsds_weights,
-        sigma=80,  # 80,  # todo: tune --> zf: 120, see https://github.com/funkelab/lsd/issues/9#issuecomment-1065299067
+        sigma=120,  # 80,  # todo: tune --> zf: 120, see https://github.com/funkelab/lsd/issues/9#issuecomment-1065299067
         downsample=2  # todo: tune
     )
 
-    neighborhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+    neighborhood = cfg.aff_nhood
 
     pipeline += gp.AddAffinities(
         affinity_neighborhood=neighborhood,
         labels=labels,
         affinities=gt_affs,
-        dtype=np.float32)
+        dtype=np.float32
+    )
 
     pipeline += gp.BalanceLabels(  # todo: needed?
         gt_affs,
@@ -337,7 +321,7 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.Stack(batch_size)
 
-    pipeline += gp.PreCache(num_workers=num_workers)
+    pipeline += gp.PreCache(cache_size=40, num_workers=num_workers)
 
     save_every = cfg.training.save_every
     pipeline += Train(
@@ -364,6 +348,8 @@ def train(cfg: DictConfig) -> None:
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
     )
+
+    # pipeline += gp.PrintProfilingStats(every=10)
 
     # Write tensorboard logs into common parent folder for all trainings for easier comparison
     # tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
@@ -481,7 +467,7 @@ def train(cfg: DictConfig) -> None:
                 cube_eval_results = eval_cubes(
                     cube_root=val_root,
                     checkpoint=save_path / f'model_checkpoint_{batch.iteration}',
-                    result_zarr_root=save_path
+                    # result_zarr_root=save_path,
                     show_in_napari=cfg.training.show_in_napari
                 )
                 rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
@@ -492,23 +478,27 @@ def train(cfg: DictConfig) -> None:
 
                 cevr = next(iter(cube_eval_results.values()))
 
-                val_raw_img = get_zslice(cevr.raw, as_wandb=True)
-                val_gt_seg_img = get_zslice(cevr.gt_seg, as_wandb=True)
-                val_pred_seg_img = get_zslice(cevr.pred_seg, as_wandb=True)
-                val_pred_frag_img = get_zslice(cevr.pred_frag, as_wandb=True)
-                val_pred_affs_img = get_zslice(cevr.pred_affs, as_wandb=True)
-                val_pred_lsds3_img = get_zslice(cevr.pred_lsds[:3], as_wandb=True)
+                val_raw_img = get_zslice(cevr.arrays['raw'], as_wandb=True)
+                val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True)
+                val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True)
+                val_pred_affs_img = get_zslice(cevr.arrays['pred_affs'], as_wandb=True)
+                val_pred_lsds3_img = get_zslice(cevr.arrays['pred_lsds'][:3], as_wandb=True)
+                val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True)
+                val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
+                val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
 
                 # TODO: Looks like frag and seg are being binarized during logging but we don't want that!
 
                 wandb.log(
                     {
                         'validation/images/raw': val_raw_img,
-                        'validation/images/gt_seg': val_gt_seg_img,
                         'validation/images/pred_seg': val_pred_seg_img,
                         'validation/images/pred_frag': val_pred_frag_img,
                         'validation/images/pred_affs': val_pred_affs_img,
                         'validation/images/pred_lsds3': val_pred_lsds3_img,
+                        'validation/images/gt_seg': val_gt_seg_img,
+                        'validation/images/gt_affs': val_gt_affs_img,
+                        'validation/images/gt_lsds3': val_gt_lsds3_img,
                     },
                     step=batch.iteration
                 )
@@ -518,6 +508,11 @@ def train(cfg: DictConfig) -> None:
                     per_cube_vois = get_per_cube_metrics(rand_voi_reports, metric_name='voi')
                     per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
                     wandb.log(per_cube_vois, commit=True, step=batch.iteration)
+
+                    per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='val_loss')
+                    per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
+                    wandb.log(per_cube_losses, commit=True, step=batch.iteration)
+
                 # tb.add_figure("eval", fig, batch.iteration)
                 # tb.add_scalar("voi_split", voi_split, batch.iteration)
                 # tb.add_scalar("voi_merge", voi_merge, batch.iteration)

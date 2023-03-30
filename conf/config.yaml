@@ -15,6 +15,8 @@ val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
 
 enable_zarr_results: true
 
+aff_nhood: [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+
 wandb:
   ## These are directly passed to wandb.init() as **kwargs
   init_cfg:
@@ -36,9 +38,11 @@ training:
   # save_root: ${path_prefix}/${v}/seg_trainings/seg_trainings_${v}_tr-${tr_group}
 
   iterations: 100001
+  # save_every: 250
   save_every: 250
   seed: 0  # TODO
-  num_workers: auto
+  # num_workers: auto
+  num_workers: 16
 
   # Hyperparams
   lr: 0.5e-4

@@ -38,8 +38,10 @@ if padding == 'same':
     input_shape = gp.Coordinate((80, 80, 80))  # todo: increase (164, 164, 164)
     output_shape = input_shape
 elif padding == 'valid':
-    s = 164
-    input_shape = gp.Coordinate((s, s, s))
+    # s = 164
+    # input_shape = gp.Coordinate((s, s, s))
+    input_shape = gp.Coordinate((84, 268, 268))
+    # input_shape = gp.Coordinate((96, 484, 484))
     offset = gp.Coordinate((40, 40, 40))
     output_shape = input_shape - offset
 
@@ -47,7 +49,7 @@ elif padding == 'valid':
 input_size = input_shape * voxel_size
 output_size = output_shape * voxel_size
 
-batch_size = 6
+batch_size = 2
 
 out_dir = Path('./out')
 out_dir.mkdir(exist_ok=True)

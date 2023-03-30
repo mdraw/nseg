@@ -27,7 +27,7 @@ def timeit(func):
     return timeit_wrapper
 
 
-@timeit
+# @timeit
 def pad_to_shape(arr: np.ndarray, new_shape: Shape) -> np.ndarray:
     """
     Zero-pad to match new_shape
@@ -48,7 +48,7 @@ def pad_to_shape(arr: np.ndarray, new_shape: Shape) -> np.ndarray:
     return padded_arr
 
 
-@timeit
+# @timeit
 def crop_to_shape(arr: np.ndarray, new_shape: Shape) -> np.ndarray:
     """
     Center-crop to match new_shape
@@ -68,7 +68,7 @@ def crop_to_shape(arr: np.ndarray, new_shape: Shape) -> np.ndarray:
     return cropped_arr
 
 
-@timeit
+# @timeit
 def _split_mc(array_dict: ArrayDict) -> ArrayDict:
     """Split multichannel arrays into channel index-named top-level subarrays, keep others as is."""
     split_mc = {}
@@ -81,21 +81,21 @@ def _split_mc(array_dict: ArrayDict) -> ArrayDict:
     return split_mc
 
 
-@timeit
+# @timeit
 def _get_max_shape(arrays: ArrayDict) -> np.ndarray:
     shapes = np.array([arr.shape for arr in arrays.values()])
     max_shape = np.max(shapes, axis=0)
     return max_shape
 
 
-@timeit
+# @timeit
 def _get_min_shape(arrays: ArrayDict) -> np.ndarray:
     shapes = np.array([arr.shape for arr in arrays.values()])
     min_shape = np.min(shapes, axis=0)
     return min_shape
 
 
-@timeit
+# @timeit
 def _pad_arrays(arrays: ArrayDict, new_shape: Shape) -> ArrayDict:
     """Pad all arrays to new_shape"""
     padded_arrays = {}
@@ -104,7 +104,7 @@ def _pad_arrays(arrays: ArrayDict, new_shape: Shape) -> ArrayDict:
     return padded_arrays
 
 
-@timeit
+# @timeit
 def _crop_arrays(arrays: ArrayDict, new_shape: Shape) -> ArrayDict:
     """Center-crop all arrays to new_shape"""
     cropped_arrays = {}
@@ -114,7 +114,7 @@ def _crop_arrays(arrays: ArrayDict, new_shape: Shape) -> ArrayDict:
 
 
 # TODO: Not working yet
-@timeit
+# @timeit
 def _cast_as(arrays: ArrayDict, dtype_map: dict[np.dtype, np.dtype]) -> ArrayDict:
     cast_arrays = {}
     for k, v in arrays.items():
@@ -189,7 +189,7 @@ class CubeEvalResult:
             print(f'{k}: min={np.min(v)}, max={np.max(v)}, n_unique={len(np.unique(v))}, dtype={v.dtype}')
 
     # TODO: Make nview support differently shaped arrays so we can always "keep" by default
-    @timeit
+    # @timeit
     def _prepare_arrays_for_writing(self, mode='pad_to_max') -> ArrayDict:
         split_arrays = _split_mc(self.arrays)
         cast_arrays = split_arrays  # TODO
@@ -206,7 +206,7 @@ class CubeEvalResult:
             raise ValueError(f'{mode=} invalid.')
 
     #TODO: Optimize writes: threading?
-    @timeit
+    # @timeit
     def write_zarr(self, path) -> None:
         zstore = zarr.DirectoryStore(path)
         print(f'Writing to {path}')
@@ -217,4 +217,4 @@ class CubeEvalResult:
             zroot[k] = v
 
         print(zroot.tree())
-        # zroot['report'] = self.report
+        # zroot['report'] = self.report  # ValueError: missing object_codec for object array
