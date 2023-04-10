@@ -38,14 +38,16 @@ training:
   # save_root: ${path_prefix}/${v}/seg_trainings/seg_trainings_${v}_tr-${tr_group}
 
   iterations: 100001
-  # save_every: 250
   save_every: 250
+  # save_every: 2
   seed: 0  # TODO
   # num_workers: auto
-  num_workers: 16
+  num_workers: 32
+  # num_workers: 0
 
   # Hyperparams
   lr: 0.5e-4
+  batch_size: 8
 
   show_gt: true
   show_pred: true

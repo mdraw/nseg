@@ -41,15 +41,19 @@ elif padding == 'valid':
     # s = 164
     # input_shape = gp.Coordinate((s, s, s))
     input_shape = gp.Coordinate((84, 268, 268))
-    # input_shape = gp.Coordinate((96, 484, 484))
     offset = gp.Coordinate((40, 40, 40))
     output_shape = input_shape - offset
+
+    inference_input_shape = gp.Coordinate((96, 484, 484))
+    inference_output_shape = inference_input_shape - offset
 
 
 input_size = input_shape * voxel_size
 output_size = output_shape * voxel_size
 
-batch_size = 2
+inference_input_size = inference_input_shape * voxel_size
+inference_output_size = inference_output_shape * voxel_size
+
 
 out_dir = Path('./out')
 out_dir.mkdir(exist_ok=True)

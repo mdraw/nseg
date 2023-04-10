@@ -17,7 +17,7 @@ from scipy.ndimage import maximum_filter
 from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
 
-from params import input_size, output_size
+from params import input_size, output_size, inference_input_size, inference_output_size
 from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
@@ -130,6 +130,7 @@ def center_crop(a, b):  # todo: from secgan
     return a, b
 
 
+# TODO: Use separate input size for inference
 def predict(
         checkpoint,
         raw_file,
@@ -140,12 +141,12 @@ def predict(
 
     scan_request = gp.BatchRequest()
 
-    scan_request.add(raw, input_size)
-    scan_request.add(pred_lsds, output_size)
-    scan_request.add(pred_affs, output_size)
+    scan_request.add(raw, inference_input_size)
+    scan_request.add(pred_lsds, inference_output_size)
+    scan_request.add(pred_affs, inference_output_size)
 
     # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
-    context = (input_size - output_size) / 2
+    context = (inference_input_size - inference_output_size) / 2
 
     source = gp.ZarrSource(
         raw_file,
@@ -157,6 +158,8 @@ def predict(
         })
 
     source += gp.Unsqueeze([raw])
+
+    # source += gp.IntensityScaleShift(raw, 2, -1)  # Rescale to training range
 
     with gp.build(source):
         total_input_roi = source.spec[raw].roi
@@ -463,9 +466,11 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_n
     gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
     cropped_pred_affs, _ = center_crop(pred_affs, gt_affs)
 
+    lsd_sigma = 120  # TODO: config
+
     gt_lsds = get_local_shape_descriptors(
         segmentation=gt_seg,
-        sigma=(120,) * 3,
+        sigma=(lsd_sigma,) * 3,
         downsample=2,
     )
 

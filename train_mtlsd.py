@@ -27,7 +27,7 @@ from omegaconf import OmegaConf, DictConfig
 
 import wandb
 
-from params import input_size, output_size, batch_size, voxel_size
+from params import input_size, output_size, voxel_size
 from segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
 from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
 
@@ -218,10 +218,12 @@ def train(cfg: DictConfig) -> None:
 
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
+    labels_mask = gp.ArrayKey('GT_LABELS_MASK')
     gt_lsds = gp.ArrayKey('GT_LSDS')
     lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
     pred_lsds = gp.ArrayKey('PRED_LSDS')
     gt_affs = gp.ArrayKey('GT_AFFS')
+    gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
 
@@ -233,10 +235,12 @@ def train(cfg: DictConfig) -> None:
     request = gp.BatchRequest()
     request.add(raw, input_size)
     request.add(labels, output_size)
+    request.add(labels_mask, output_size)
     request.add(gt_lsds, output_size)
     request.add(lsds_weights, output_size)
     request.add(pred_lsds, output_size)
     request.add(gt_affs, output_size)
+    request.add(gt_affs_mask, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
 
@@ -250,17 +254,21 @@ def train(cfg: DictConfig) -> None:
             {
                 raw: 'volumes/raw',
                 labels: 'volumes/labels/neuron_ids',
-                # TODO: labels_mask?
+                labels_mask: 'volumes/labels/labels_mask', # TODO: labels_mask?
             },
             {
                 raw: gp.ArraySpec(interpolatable=True),
-                labels: gp.ArraySpec(interpolatable=False)
+                labels: gp.ArraySpec(interpolatable=False),
+                labels_mask: gp.ArraySpec(interpolatable=False),
             }) +
         gp.Normalize(raw) +
         # gp.Squeeze([raw], axis=0) +
-        # gp.Pad(raw, None) +
+        gp.Pad(raw, None) +
         gp.Pad(labels, labels_padding) +
-        gp.RandomLocation()
+        gp.Pad(labels_mask, labels_padding) +
+        # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine.
+        # gp.RandomLocation(min_masked=0.5, mask=labels_mask)
+        gp.RandomLocation(min_masked=0.3, mask=labels_mask)
         for tr_file in tr_files
     )
 
@@ -281,9 +289,7 @@ def train(cfg: DictConfig) -> None:
     #     subsample=8,
     # )
 
-    # Note before re-enabling: SimpleAugement can fail! Why? Maybe axes are wrong and expect xyz?
-    # pipeline += gp.SimpleAugment(transpose_only=[0, 1])  # todo: also rotate?
-    # pipeline += gp.SimpleAugment(transpose_only=[1, 2])
+    # pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
 
     pipeline += gp.IntensityAugment(
         raw,
@@ -293,7 +299,7 @@ def train(cfg: DictConfig) -> None:
         shift_max=0.1,
         z_section_wise=True
     )
-    pipeline += gp.GrowBoundary(labels, steps=1, only_xy=True)
+    pipeline += gp.GrowBoundary(labels, mask=labels_mask, steps=1, only_xy=True)
 
     # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
     pipeline += AddLocalShapeDescriptor(
@@ -310,18 +316,26 @@ def train(cfg: DictConfig) -> None:
         affinity_neighborhood=neighborhood,
         labels=labels,
         affinities=gt_affs,
+        labels_mask=labels_mask,
+        affinities_mask=gt_affs_mask,
         dtype=np.float32
     )
 
     pipeline += gp.BalanceLabels(  # todo: needed?
         gt_affs,
-        affs_weights)
+        affs_weights,
+        gt_affs_mask,
+    )
 
     pipeline += gp.Unsqueeze([raw])
 
-    pipeline += gp.Stack(batch_size)
+    pipeline += gp.Stack(cfg.training.batch_size)
 
-    pipeline += gp.PreCache(cache_size=40, num_workers=num_workers)
+    if num_workers > 0:
+        pipeline += gp.PreCache(cache_size=40, num_workers=num_workers)
+
+
+    # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
 
     save_every = cfg.training.save_every
     pipeline += Train(
@@ -348,6 +362,9 @@ def train(cfg: DictConfig) -> None:
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
     )
+
+    # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
+
 
     # pipeline += gp.PrintProfilingStats(every=10)
 
