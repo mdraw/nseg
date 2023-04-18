@@ -32,7 +32,7 @@ model:
   num_affs: 3
 
   backbone:
-    model_class: shared.get_funlib_unet
+    model_class: nseg.shared.get_funlib_unet
     num_fmaps: 14
     offset: [40, 40, 40]
     inp_shape: [84, 268, 268]
@@ -53,7 +53,7 @@ model:
   #     conv_mode: 'valid'
 
   # backbone:
-  #   model_class: shared.get_swin_unetr_v2
+  #   model_class: nseg.shared.get_swin_unetr_v2
   #   num_fmaps: 14
   #   inp_shape: [128, 128, 128]
   #   offset: [0, 0, 0]

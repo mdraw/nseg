@@ -1,10 +1,10 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 import torch
 import gunpowder as gp
+import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import waterz
@@ -14,17 +14,15 @@ from scipy.ndimage import label
 from scipy.ndimage import maximum_filter
 from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
-
-import hydra
-from omegaconf import OmegaConf, DictConfig
-
-
-from shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
-from gp_predict import Predict
+from omegaconf import DictConfig
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
-import eval_utils
+from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
+from nseg.gp_predict import Predict
+
+
+import nseg.eval_utils
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
@@ -553,7 +551,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     return eval_result
 
 
-@hydra.main(version_base='1.3', config_path='./conf', config_name='config')
+@hydra.main(version_base='1.3', config_path='conf', config_name='config')
 def main(cfg: DictConfig) -> None:
     eval_cubes(cfg)
 

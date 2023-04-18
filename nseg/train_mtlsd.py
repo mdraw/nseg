@@ -557,7 +557,7 @@ def train(cfg: DictConfig) -> None:
     # todo: save weights?
 
 
-@hydra.main(version_base='1.3', config_path='./conf', config_name='config')
+@hydra.main(version_base='1.3', config_path='conf', config_name='config')
 def main(cfg: DictConfig) -> None:
     train(cfg)
 
