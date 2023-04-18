@@ -1,7 +1,16 @@
 # Based on https://github.com/funkelab/gunpowder/blob/48768d2f3165cb52d8614069450a81f0599477ee/gunpowder/torch/nodes/train.py
 
 import logging
+import os
+import time
+from pickle import PickleError
+import pprint
+import warnings
+import zipfile
 import numpy as np
+
+from torch.cuda.amp import autocast, GradScaler
+
 
 from gunpowder.array import ArrayKey, Array
 from gunpowder.array_spec import ArraySpec
@@ -9,6 +18,9 @@ from gunpowder.ext import torch, tensorboardX, NoSuchModule
 from gunpowder.nodes.generic_train import GenericTrain
 
 from typing import Dict, Union, Optional
+
+from torch.utils import collect_env
+from omegaconf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +92,25 @@ class Train(GenericTrain):
         spawn_subprocess (``bool``, optional):
 
             Whether to run the ``train_step`` in a separate process. Default is false.
+
+        enable_amp:
+
+            Enable automatic mixed precision training.
+
+        save_jit:
+
+            Save jit-compiled model checkpoints in addition to other formats, either
+            ``'script'``, ``'trace'`` or ``None`` (disabled).
+
+        example_input:
+
+            Example input tensor for jit tracing (only used if ``save_jit='trace'``)
+
+        cfg:
+
+            ``omegaconf.DictConfig`` object that holds the experiment config. If supplied
+            it will be saved in model checkpoints.
+
     """
 
     def __init__(
@@ -97,6 +128,11 @@ class Train(GenericTrain):
         log_dir: str = None,
         log_every: int = 1,
         spawn_subprocess: bool = False,
+        resume: bool = True,
+        enable_amp: bool = True,
+        save_jit: str = 'script',
+        example_input: Optional[torch.Tensor] = None,
+        cfg: Optional[DictConfig] = None,
     ):
 
         if not model.training:
@@ -121,8 +157,15 @@ class Train(GenericTrain):
         self.loss_inputs = loss_inputs
         self.checkpoint_basename = checkpoint_basename
         self.save_every = save_every
+        self.resume = resume
+        self.enable_amp = enable_amp
+        self.save_jit = save_jit
+        self.example_input = example_input
+        self.cfg = cfg
 
         self.iteration = 0
+
+        self.scaler = GradScaler(enabled=self.enable_amp)
 
         if not isinstance(tensorboardX, NoSuchModule) and log_dir is not None:
             self.summary_writer = tensorboardX.SummaryWriter(log_dir)
@@ -161,6 +204,29 @@ class Train(GenericTrain):
                 )
             tensor.retain_grad()
 
+    # Override GenericTrain.process(), removing overly verbose logging
+    def process(self, batch, request):
+        start = time.time()
+
+        if self.spawn_subprocess:
+            self.batch_in.put((batch, request))
+            try:
+                out = self.worker.get()
+            except WorkersDied:
+                raise TrainProcessDied()
+            for array_key in self.provided_arrays:
+                if array_key in request:
+                    batch.arrays[array_key] = out.arrays[array_key]
+            batch.loss = out.loss
+            batch.iteration = out.iteration
+        else:
+            self.train_step(batch, request)
+
+        time_of_iteration = time.time() - start
+        # logger.info(
+        #     "Train process: iteration=%d loss=%f time=%f",
+        #     batch.iteration, batch.loss, time_of_iteration)
+
     def start(self):
 
         self.use_cuda = torch.cuda.is_available()
@@ -177,24 +243,30 @@ class Train(GenericTrain):
         if isinstance(self.loss, torch.nn.Module):
             self.loss = self.loss.to(self.device)
 
-        checkpoint, self.iteration = self._get_latest_checkpoint(
-            self.checkpoint_basename
-        )
+        if self.resume:
+            checkpoint, self.iteration = self._get_latest_checkpoint(
+                self.checkpoint_basename
+            )
+            if checkpoint is not None:
 
-        if checkpoint is not None:
+                logger.info("Resuming training from iteration %d", self.iteration)
+                logger.info("Loading %s", checkpoint)
 
-            logger.info("Resuming training from iteration %d", self.iteration)
-            logger.info("Loading %s", checkpoint)
-
-            checkpoint = torch.load(checkpoint, map_location=self.device)
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
+                checkpoint = torch.load(checkpoint, map_location=self.device)
+                self.model.load_state_dict(checkpoint["model_state_dict"])
+                self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         else:
-
             logger.info("Starting training from scratch")
 
         logger.info("Using device %s", self.device)
+
+        if self.save_jit == 'script':
+            logger.info('Checking compatibility with torch.jit.script()...')
+            jitmodel = torch.jit.script(self.model)
+        elif self.save_jit == 'trace':
+            logger.info(f'Checking compatibility with torch.jit.trace() using example of shape {self.example_input.shape}...')
+            jitmodel = torch.jit.trace(self.model, self.example_input.to(self.device))
+
 
     def train_step(self, batch, request):
 
@@ -208,60 +280,65 @@ class Train(GenericTrain):
 
         # get outputs. Keys are tuple indices or model attr names as in self.outputs
         self.optimizer.zero_grad()
-        model_outputs = self.model(**device_inputs)
-        if isinstance(model_outputs, tuple):
-            outputs = {i: model_outputs[i] for i in range(len(model_outputs))}
-        elif isinstance(model_outputs, torch.Tensor):
-            outputs = {0: model_outputs}
-        else:
-            raise RuntimeError(
-                "Torch train node only supports return types of tuple",
-                f"and torch.Tensor from model.forward(). not {type(model_outputs)}",
-            )
-        outputs.update(self.intermediate_layers)
 
-        # Some inputs to the loss should come from the batch, not the model
-        provided_loss_inputs = self.__collect_provided_loss_inputs(batch)
+        with autocast(enabled=self.enable_amp):
 
-        device_loss_inputs = {
-            k: torch.as_tensor(v, device=self.device)
-            for k, v in provided_loss_inputs.items()
-        }
-
-        # Some inputs to the loss function should come from the outputs of the model
-        # Update device loss inputs with tensors from outputs if available
-        flipped_outputs = {v: outputs[k] for k, v in self.outputs.items()}
-        device_loss_inputs = {
-            k: flipped_outputs.get(v, device_loss_inputs.get(k))
-            for k, v in self.loss_inputs.items()
-        }
-
-        device_loss_args = []
-        for i in range(len(device_loss_inputs)):
-            if i in device_loss_inputs:
-                device_loss_args.append(device_loss_inputs.pop(i))
+            model_outputs = self.model(**device_inputs)
+            if isinstance(model_outputs, tuple):
+                outputs = {i: model_outputs[i] for i in range(len(model_outputs))}
+            elif isinstance(model_outputs, torch.Tensor):
+                outputs = {0: model_outputs}
             else:
-                break
-        device_loss_kwargs = {}
-        for k, v in list(device_loss_inputs.items()):
-            if isinstance(k, str):
-                device_loss_kwargs[k] = device_loss_inputs.pop(k)
-        assert (
-            len(device_loss_inputs) == 0
-        ), f"Not all loss inputs could be interpreted. Failed keys: {device_loss_inputs.keys()}"
+                raise RuntimeError(
+                    "Torch train node only supports return types of tuple",
+                    f"and torch.Tensor from model.forward(). not {type(model_outputs)}",
+                )
+            outputs.update(self.intermediate_layers)
 
-        self.retain_gradients(request, outputs)
+            # Some inputs to the loss should come from the batch, not the model
+            provided_loss_inputs = self.__collect_provided_loss_inputs(batch)
 
-        logger.debug(
-            "model outputs: %s",
-            {k: v.shape for k, v in outputs.items()})
-        logger.debug(
-            "loss inputs: %s %s",
-            [v.shape for v in device_loss_args],
-            {k: v.shape for k, v in device_loss_kwargs.items()})
-        loss = self.loss(*device_loss_args, **device_loss_kwargs)
-        loss.backward()
-        self.optimizer.step()
+            device_loss_inputs = {
+                k: torch.as_tensor(v, device=self.device)
+                for k, v in provided_loss_inputs.items()
+            }
+
+            # Some inputs to the loss function should come from the outputs of the model
+            # Update device loss inputs with tensors from outputs if available
+            flipped_outputs = {v: outputs[k] for k, v in self.outputs.items()}
+            device_loss_inputs = {
+                k: flipped_outputs.get(v, device_loss_inputs.get(k))
+                for k, v in self.loss_inputs.items()
+            }
+
+            device_loss_args = []
+            for i in range(len(device_loss_inputs)):
+                if i in device_loss_inputs:
+                    device_loss_args.append(device_loss_inputs.pop(i))
+                else:
+                    break
+            device_loss_kwargs = {}
+            for k, v in list(device_loss_inputs.items()):
+                if isinstance(k, str):
+                    device_loss_kwargs[k] = device_loss_inputs.pop(k)
+            assert (
+                len(device_loss_inputs) == 0
+            ), f"Not all loss inputs could be interpreted. Failed keys: {device_loss_inputs.keys()}"
+
+            self.retain_gradients(request, outputs)
+
+            logger.debug(
+                "model outputs: %s",
+                {k: v.shape for k, v in outputs.items()})
+            logger.debug(
+                "loss inputs: %s %s",
+                [v.shape for v in device_loss_args],
+                {k: v.shape for k, v in device_loss_kwargs.items()})
+            loss = self.loss(*device_loss_args, **device_loss_kwargs)
+
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
         # add requested model outputs to batch
         for array_key, array_name in requested_outputs.items():
@@ -301,22 +378,147 @@ class Train(GenericTrain):
 
         if batch.iteration % self.save_every == 0:
 
-            checkpoint_name = self._checkpoint_name(
-                self.checkpoint_basename, batch.iteration
-            )
-
-            logger.info("Creating checkpoint %s", checkpoint_name)
-
-            torch.save(
-                {
-                    "model_state_dict": self.model.state_dict(),
-                    "optimizer_state_dict": self.optimizer.state_dict(),
-                },
-                checkpoint_name,
-            )
+            self._save_model()
 
         if self.summary_writer and batch.iteration % self.log_every == 0:
             self.summary_writer.add_scalar("loss", batch.loss, batch.iteration)
+
+    # Based on elektronn3.training.trainer.Trainer._save_model, original code at
+    # https://github.com/ELEKTRONN/elektronn3/blob/01e55c5e9d6baf7da9dbcf790d68deff1132a8db/elektronn3/training/trainer.py#L778
+    def _save_model(
+            self,
+            suffix: str = '',
+            unwrap_parallel: bool = True,
+            verbose: bool = True,
+    ) -> None:
+        """Save/serialize trained model state to files.
+
+        Writes the following files in the ``self.save_path``:
+
+        - ``state_dicts.pth`` contains the a dict that holds the ``state_dict``
+          of the trained model, the ``state_dict`` of the optimizer and
+          model's ``state_dict``. The model code (architecture) itself is not
+          included in this file.
+        - ``model.pt`` contains a pickled version of the complete model,
+          including the trained weights. You can simply
+          ``model = torch.load('model.pt')`` to obtain the full model and its
+          training state. This will not work if the source code relevant to de-
+          serializing the model object has changed! If this is is the case,
+          you will need to use the ``state_dict.pth`` to extract parameters and
+          manually load them into a model.
+        - ``model.pts`` contains the model in the ``torch.jit`` ScriptModule
+          serialization format. If ``model`` is not already a ``ScriptModule``
+          and ``self.save_jit`` is not ``None``, a ScriptModule form of the
+          ``model`` will be created on demand.
+
+        Args:
+            suffix: If defined, this string will be added before the file
+                extensions of the respective files mentioned above.
+            unwrap_parallel: If ``True`` (default) and the model uses a parallel
+                module wrapper like ``torch.nn.DataParallel``, this is
+                automatically detected and the wrapped model is saved directly
+                to make later deserialization easier. This can be disabled by
+                setting ``unwrap_parallel=False``.
+            verbose: If ``True`` (default), log infos about saved models at
+                log-level "INFO" (which appears in stdout). Else, only silently
+                log with log-level "DEBUG".
+            val_loss: Stores the validation loss
+                (default value if not supplied: NaN)
+        """
+        log = logger.info if verbose else logger.debug
+
+        model = self.model
+
+        model_trainmode = model.training
+
+
+
+        # We do this awkard check because there are too many different
+        # parallel wrappers in PyTorch and some of them have changed names
+        # in different releases (DataParallel, DistributedDataParallel{,CPU}).
+        is_wrapped = (
+            hasattr(model, 'module') and
+            'parallel' in str(type(model)).lower() and
+            isinstance(model.module, torch.nn.Module)
+        )
+        if is_wrapped and unwrap_parallel:
+            # If a parallel wrapper was used, the only thing we should save
+            # is the model.module, which contains the actual model and params.
+            # If we saved the wrapped module directly, deserialization would
+            # get unnecessarily difficult.
+            model = model.module
+
+        checkpoint_stem = self._checkpoint_name(
+            self.checkpoint_basename, self.iteration
+        )
+
+        state_dict_path = f'{checkpoint_stem}{suffix}.pth'
+        model_path = f'{checkpoint_stem}{suffix}.pt'
+
+        try:
+            lr_sched_state = self.schedulers['lr'].state_dict()
+        except:  # No valid scheduler in use
+            lr_sched_state = None
+
+        info = {
+            'iteration': self.iteration,
+            'env_info': collect_env.get_pretty_env_info()
+        }
+        # Make sure everything is a string (if inference_kwargs contains a
+        #  transform object, it may not be picklable)
+        info = {k: str(v) for k, v in info.items()}
+
+        cfg_yaml = '' if self.cfg is None else OmegaConf.to_yaml(self.cfg, resolve=True)
+        cfg_dict = {} if self.cfg is None else OmegaConf.to_container(self.cfg, resolve=True)
+
+        full_dict = {
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'lr_sched_state_dict': lr_sched_state,
+            'scaler_state_dict': self.scaler.state_dict(),
+            'info': info,
+        }
+        if self.cfg is not None:
+            full_dict['cfg'] = cfg_dict
+        torch.save(full_dict, state_dict_path)
+        log(f'Saved state_dict as {state_dict_path}')
+        pts_model_path = f'{model_path}s'
+        try:
+            # Try saving directly as an uncompiled nn.Module
+            torch.save(model, model_path)
+            log(f'Saved model as {model_path}')
+            if self.save_jit == 'script':  # Compile directly for serialization
+                jitmodel = torch.jit.script(model)
+            elif self.save_jit == 'trace':  # Trace and serialize the model in eval mode
+                if self.example_input is None:
+                    raise ValueError('If save_jit="trace", example_input needs to be specified.')
+                with warnings.catch_warnings():
+                    # It's enough to be warned once during initial tracing
+                    warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
+                    jitmodel = torch.jit.trace(model.eval(), self.example_input.to(self.device))
+            if self.save_jit is not None:  # Save jit model, either from script or trace
+                jitmodel.save(pts_model_path)
+                log(f'Saved jitted model ({self.save_jit}) as {pts_model_path}')
+        except (TypeError, PickleError) as exc:
+            # If model is already a ScriptModule, it can't be saved with torch.save()
+            # Use ScriptModule.save() instead in this case.
+            # Using the file extension '.pts' to show it's a ScriptModule.
+            if isinstance(model, torch.jit.ScriptModule):
+                model_path += 's'
+                model.save(pts_model_path)
+                log(f'Saved jitted model as {pts_model_path}')
+            else:
+                raise exc
+        finally:
+            # Reset training state to the one it had before this function call,
+            # because it could have changed with the model.eval() call above.
+            model.training = model_trainmode
+        if os.path.isfile(pts_model_path):
+            with zipfile.ZipFile(pts_model_path, 'a', compression=zipfile.ZIP_DEFLATED) as zfile:
+                infostr = pprint.pformat(info, indent=2, width=120)
+                zfile.writestr('info.txt', infostr)
+                if self.cfg is not None:
+                    zfile.writestr('config.yaml', cfg_yaml)
 
     def __collect_requested_outputs(self, request):
 
