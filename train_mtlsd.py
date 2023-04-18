@@ -17,7 +17,6 @@ import gunpowder as gp
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from gunpowder.torch import Train
 from lsd.train.gp import AddLocalShapeDescriptor
 from torch.utils import tensorboard
 from tqdm import tqdm
@@ -27,9 +26,10 @@ from omegaconf import OmegaConf, DictConfig
 
 import wandb
 
-from params import input_size, output_size, voxel_size
+# from params import input_size, output_size, voxel_size
 from segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
+from shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
+from gp_train import Train
 
 
 lsd_channels = {
@@ -227,7 +227,21 @@ def train(cfg: DictConfig) -> None:
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
 
-    model = get_mtlsdmodel()
+    voxel_size = gp.Coordinate(cfg.data.voxel_size)
+    # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
+    input_shape = gp.Coordinate(cfg.model.backbone.inp_shape)
+    input_size = input_shape * voxel_size
+    offset = gp.Coordinate(cfg.model.backbone.offset)
+    output_shape = input_shape - offset
+    output_size = output_shape * voxel_size
+
+    # model = get_mtlsdmodel()
+    model = build_mtlsdmodel(cfg.model)
+    example_input = torch.randn(
+        1,  # cfg.training.batch_size,
+        1,  # cfg.model.backbone.init_kwargs.in_channels,
+        *cfg.model.backbone.inp_shape,
+    )
 
     loss = WeightedMSELoss()
     optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
@@ -282,14 +296,15 @@ def train(cfg: DictConfig) -> None:
     # pipeline += gp.ElasticAugment(
     #     control_point_spacing=[4, 4, 10],
     #     jitter_sigma=[0, 2, 2],
-    #     rotation_interval=[0, np.pi / 2.0],
+    #     # rotation_interval=[0, np.pi / 2.0],
+    #     rotation_interval=[-np.pi / 16.0, np.pi / 16.0],  # Smaller rotation interval so we don't need as much space for rotation
     #     prob_slip=0.05,
     #     prob_shift=0.05,
     #     max_misalign=10,
-    #     subsample=8,
+    #     subsample=2,
     # )
 
-    # pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
+    pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
 
     pipeline += gp.IntensityAugment(
         raw,
@@ -310,7 +325,7 @@ def train(cfg: DictConfig) -> None:
         downsample=2  # todo: tune
     )
 
-    neighborhood = cfg.aff_nhood
+    neighborhood = cfg.labels.aff.nhood
 
     pipeline += gp.AddAffinities(
         affinity_neighborhood=neighborhood,
@@ -361,6 +376,9 @@ def train(cfg: DictConfig) -> None:
         save_every=save_every,  # todo: increase,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
+        save_jit=cfg.training.save_jit,
+        example_input=example_input,
+        cfg=cfg,
     )
 
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
@@ -454,39 +472,37 @@ def train(cfg: DictConfig) -> None:
                 # import IPython ; IPython.embed(); raise SystemExit
 
 
-                for c in range(batch[raw].data.shape[1]):
-                    imshow(tb=tb, it=batch.iteration,
-                           raw=np.squeeze(batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]), channel=c)
+                # for c in range(batch[raw].data.shape[1]):
+                #     imshow(tb=tb, it=batch.iteration,
+                #            raw=np.squeeze(batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]), channel=c)
 
-                imshow(tb=tb, it=batch.iteration, ground_truth=batch[labels].data)
+                # imshow(tb=tb, it=batch.iteration, ground_truth=batch[labels].data)
 
-                if lsd_channels:
-                    for n, c in lsd_channels.items():
+                # if lsd_channels:
+                #     for n, c in lsd_channels.items():
 
-                        if cfg.training.show_gt:
-                            imshow(tb=tb, it=batch.iteration, target=batch[gt_lsds].data, target_name='gt ' + n,
-                                   channel=c)
-                        if cfg.training.show_pred:
-                            imshow(tb=tb, it=batch.iteration, prediction=batch[pred_lsds].data,
-                                   prediction_name='pred ' + n, channel=c)
+                #         if cfg.training.show_gt:
+                #             imshow(tb=tb, it=batch.iteration, target=batch[gt_lsds].data, target_name='gt ' + n,
+                #                    channel=c)
+                #         if cfg.training.show_pred:
+                #             imshow(tb=tb, it=batch.iteration, prediction=batch[pred_lsds].data,
+                #                    prediction_name='pred ' + n, channel=c)
 
-                if aff_channels:
-                    for n, c in aff_channels.items():
+                # if aff_channels:
+                #     for n, c in aff_channels.items():
 
-                        if cfg.training.show_gt:
-                            imshow(tb=tb, it=batch.iteration, target=batch[gt_affs].data, target_name='gt ' + n,
-                                   channel=c)
-                        if cfg.training.show_pred:
-                            imshow(tb=tb, it=batch.iteration, target=batch[pred_affs].data, target_name='pred ' + n,
-                                   channel=c)
+                #         if cfg.training.show_gt:
+                #             imshow(tb=tb, it=batch.iteration, target=batch[gt_affs].data, target_name='gt ' + n,
+                #                    channel=c)
+                #         if cfg.training.show_pred:
+                #             imshow(tb=tb, it=batch.iteration, target=batch[pred_affs].data, target_name='pred ' + n,
+                #                    channel=c)
 
                 # fig, voi_split, voi_merge = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
-                cube_eval_results = eval_cubes(
-                    cube_root=val_root,
-                    checkpoint=save_path / f'model_checkpoint_{batch.iteration}',
-                    # result_zarr_root=save_path,
-                    show_in_napari=cfg.training.show_in_napari
-                )
+                checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                # TODO: Check both .pt and .pts
+                cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
+
                 rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
                 # print(rand_voi_reports)
                 mean_report = get_mean_report(rand_voi_reports)
@@ -535,8 +551,8 @@ def train(cfg: DictConfig) -> None:
                 # tb.add_scalar("voi_merge", voi_merge, batch.iteration)
                 # tb.add_scalar("voi", voi_split + voi_merge, batch.iteration)
 
-                tb.flush()
-            progress.set_description(f'Training iteration {i}')
+                # tb.flush()
+            progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
             pass
     # todo: save weights?
 

@@ -207,14 +207,15 @@ class CubeEvalResult:
 
     #TODO: Optimize writes: threading?
     # @timeit
-    def write_zarr(self, path) -> None:
+    def write_zarr(self, path, groups=None) -> None:
         zstore = zarr.DirectoryStore(path)
         print(f'Writing to {path}')
         zroot = zarr.group(store=zstore, overwrite=True)
         writable_arrays = self._prepare_arrays_for_writing()
         for k, v in writable_arrays.items():
-            zroot.create_group(k)
-            zroot[k] = v
+            if groups is None or k in groups:
+                zroot.create_group(k)
+                zroot[k] = v
 
         print(zroot.tree())
         # zroot['report'] = self.report  # ValueError: missing object_codec for object array

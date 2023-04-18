@@ -2,12 +2,10 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import torch
-import gunpowder.torch
 import gunpowder as gp
 import matplotlib.pyplot as plt
-import napari
 import numpy as np
 import waterz
 import zarr
@@ -17,8 +15,12 @@ from scipy.ndimage import maximum_filter
 from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
 
-from params import input_size, output_size, inference_input_size, inference_output_size
-from shared import create_lut, get_mtlsdmodel, WeightedMSELoss
+import hydra
+from omegaconf import OmegaConf, DictConfig
+
+
+from shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
+from gp_predict import Predict
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
@@ -130,28 +132,36 @@ def center_crop(a, b):  # todo: from secgan
     return a, b
 
 
-# TODO: Use separate input size for inference
-def predict(
-        checkpoint,
-        raw_file,
-        raw_dataset):
+# TODO: Load model from checkpoint spec (support alternative models)
+def predict(cfg, raw_path, checkpoint_path=None):
+
+    voxel_size = gp.Coordinate(cfg.data.voxel_size)
+    # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
+    input_shape = gp.Coordinate(
+        cfg.model.backbone.get('ev_inp_shape', cfg.model.backbone.inp_shape)
+    )
+    input_size = input_shape * voxel_size
+    offset = gp.Coordinate(cfg.model.backbone.offset)
+    output_shape = input_shape - offset
+    output_size = output_shape * voxel_size
+
     raw = gp.ArrayKey('RAW')
     pred_lsds = gp.ArrayKey('PRED_LSDS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
 
     scan_request = gp.BatchRequest()
 
-    scan_request.add(raw, inference_input_size)
-    scan_request.add(pred_lsds, inference_output_size)
-    scan_request.add(pred_affs, inference_output_size)
+    scan_request.add(raw, input_size)
+    scan_request.add(pred_lsds, output_size)
+    scan_request.add(pred_affs, output_size)
 
     # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
-    context = (inference_input_size - inference_output_size) / 2
+    context = (input_size - output_size) / 2
 
     source = gp.ZarrSource(
-        raw_file,
+        str(raw_path),
         {
-            raw: raw_dataset
+            raw: cfg.eval.raw_name
         },
         {
             raw: gp.ArraySpec(interpolatable=True)
@@ -165,15 +175,21 @@ def predict(
         total_input_roi = source.spec[raw].roi
         total_output_roi = source.spec[raw].roi.grow(-context, -context)
 
-    model = get_mtlsdmodel()  # MtlsdModel()
+    # model = get_mtlsdmodel()  # MtlsdModel()
+    model = build_mtlsdmodel(cfg.model)
 
     # set model to eval mode
     model.eval()
 
+    if checkpoint_path is None:  # Fall back to cfg checkpoint
+        checkpoint_path = cfg.eval.checkpoint
+
+    # TODO: Support .pts checkpoint model override
+
     # add a predict node
-    predict = gp.torch.Predict(
+    predict = Predict(
         model=model,
-        checkpoint=checkpoint,
+        checkpoint=checkpoint_path,
         inputs={
             'input': raw
         },
@@ -418,22 +434,24 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
 
 
 
-def eval_cubes(cube_root, checkpoint, result_zarr_root=None, show_in_napari=False):
+# def eval_cubes(cube_root, checkpoint, result_zarr_root=None, show_in_napari=False):
+def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
+    cube_root = cfg.eval.cube_root
+    if checkpoint_path is None:  # fall back to cfg path if not overridden
+        checkpoint_path = cfg.eval.checkpoint_path
+
     # 'model_checkpoint_50000'
     val_root = Path(cube_root)
-    raw_files = list(val_root.glob('*.zarr'))
-    raw_dataset = 'volumes/raw'
+    raw_paths = list(val_root.glob('*.zarr'))
 
     cube_eval_results: dict[str, eval_utils.CubeEvalResult] = {}
     rand_voi_reports = {}
-    assert len(raw_files) > 0
+    assert len(raw_paths) > 0
 
-    for raw_file in raw_files:
-        name = raw_file.name
-        result_zarr_path = None if result_zarr_root is None else Path(result_zarr_root) / f'results_{name}'
+    for raw_path in raw_paths:
+        name = raw_path.name
 
-        # pred_affs, pred_lsds, rand_voi_report, raw, segmentation = run_eval(checkpoint, raw_dataset, str(raw_file), show_in_napari=show_in_napari)
-        cevr = run_eval(checkpoint, raw_dataset, str(raw_file), result_zarr_path=result_zarr_path, show_in_napari=show_in_napari)
+        cevr = run_eval(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path, enable_zarr_results=enable_zarr_results)
         cube_eval_results[name] = cevr
 
 
@@ -443,35 +461,29 @@ def eval_cubes(cube_root, checkpoint, result_zarr_root=None, show_in_napari=Fals
     return cube_eval_results
 
 
-def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_napari=False):
-    raw, pred_lsds, pred_affs = predict(checkpoint, raw_file, raw_dataset)
+# def run_eval(checkpoint, raw_dataset, raw_file, cfg, result_zarr_path=None):
+def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
+    raw, pred_lsds, pred_affs = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
 
-    data = zarr.open(raw_file, 'r')
-    gt_seg = np.array(data.volumes.labels.neuron_ids)
-
-    # # watershed assumes 3d arrays, create fake channel dim (call these watershed affs - ws_affs)
-    # ws_affs = np.stack([
-    #     # np.zeros_like(pred_affs[0]),
-    #     pred_affs[0],  # todo
-    #     pred_affs[1],
-    #     pred_affs[2],
-    # ])
+    data = zarr.open(str(raw_path), 'r')
+    gt_seg = np.array(data[cfg.eval.gt_name])  # type: ignore
 
     ws_affs = pred_affs
 
     # Get GT affs and LSDs
 
     # TODO: Get from cfg, make sure to stay consistent with training setup
-    aff_nhood = [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
+    aff_nhood = cfg.labels.aff.nhood
     gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
     cropped_pred_affs, _ = center_crop(pred_affs, gt_affs)
 
-    lsd_sigma = 120  # TODO: config
+    lsd_sigma = (cfg.labels.lsd.sigma, ) * 3
+    lsd_downsample = cfg.labels.lsd.downsample
 
     gt_lsds = get_local_shape_descriptors(
         segmentation=gt_seg,
-        sigma=(lsd_sigma,) * 3,
-        downsample=2,
+        sigma=lsd_sigma,
+        downsample=lsd_downsample,
     )
 
     cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
@@ -493,8 +505,8 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_n
     # print(f'{pred_affs.shape=}, {ws_affs.shape=}')
 
     # higher thresholds will merge more, lower thresholds will split more
-    threshold = 0.043
-    fragment_threshold = 0.5
+    threshold = cfg.eval.threshold
+    fragment_threshold = cfg.eval.fragment_threshold
 
     pred_seg, pred_frag, boundary_distances = get_segmentation(
         ws_affs,
@@ -515,29 +527,6 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_n
 
     rand_voi_report['val_loss'] = eval_loss
 
-    if show_in_napari:
-        # fragments_new = np.reshape(np.arange(fragments.size, dtype=np.uint64), fragments.shape) + 1
-        # generator = waterz.agglomerate(
-        #    affs=ws_affs.astype(np.float32),  # .squeeze(1),
-        #    fragments=np.copy(fragments_new),  # .squeeze(0),
-        #    thresholds=[0.5],
-        # )
-        # new_segmentation = next(generator)
-        # (fragments!=0).mean(), (data["labels"][0][10:-10, 10:-10, 10:-10]!=0).mean()
-        viewer = napari.Viewer()
-        viewer.add_image(pred_lsds[0:3], channel_axis=0, name="lsd0,2", gamma=2)
-        viewer.add_image(pred_lsds[3:6], channel_axis=0, name="lsd3,6", gamma=2)
-        viewer.add_image(pred_lsds[6:9], channel_axis=0, name="lsd6,9", gamma=2)
-        viewer.add_image(pred_lsds[9:10], channel_axis=0, name="lsd9", gamma=2)
-        viewer.add_image(pred_affs, channel_axis=0, name="affs", gamma=2)
-        viewer.add_image(raw[:, 10:-10, 10:-10, 10:-10], channel_axis=0, name="raw", opacity=0.2, gamma=2)
-        # viewer.add_image(pred_affs, channel_axis=0, name="affs")
-        # viewer.add_image(boundary_distances, name="boundary_distances")
-        viewer.add_labels(pred_seg, name="seg")
-        viewer.add_labels(fragments, name="frag")
-        viewer.add_labels(gt_seg, name="gt")
-        napari.run()
-
     eval_result = eval_utils.CubeEvalResult(
         report=rand_voi_report,
         arrays=dict(
@@ -552,17 +541,22 @@ def run_eval(checkpoint, raw_dataset, raw_file, result_zarr_path=None, show_in_n
         )
     )
 
-    if result_zarr_path is not None:
-        eval_result.write_zarr(result_zarr_path)
+    result_zarr_root = cfg.eval.result_zarr_root
+    write_groups = cfg.eval.get('write_groups', None)
+    if enable_zarr_results and result_zarr_root is not None:
+        _name = raw_path.name
+        result_zarr_path = Path(result_zarr_root) / f'results_{_name}'
+        eval_result.write_zarr(result_zarr_path, groups=write_groups)
 
     print(f'VOI: {voi}')
 
     return eval_result
 
 
+@hydra.main(version_base='1.3', config_path='./conf', config_name='config')
+def main(cfg: DictConfig) -> None:
+    eval_cubes(cfg)
+
+
 if __name__ == "__main__":
-    eval_cubes(
-        cube_root=Path('/cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation_n1/').expanduser(),
-        checkpoint='/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/2023-03-15_13-42-24/model_checkpoint_89500',
-        result_zarr_root='/cajal/scratch/projects/misc/mdraw/lsdex/v1/eval_zarr/'
-    )
+    main()

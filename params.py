@@ -28,37 +28,44 @@ from pathlib import Path
 # output_shape = gp.Coordinate((84, 84, 84)  # (124, 124, 124)
 #                              )
 
-voxel_size = gp.Coordinate((20, 9, 9))  # zyx
-
-padding = 'valid'
-
-# input size in voxels
-
-if padding == 'same':
-    input_shape = gp.Coordinate((80, 80, 80))  # todo: increase (164, 164, 164)
-    output_shape = input_shape
-elif padding == 'valid':
-    # s = 164
-    # input_shape = gp.Coordinate((s, s, s))
-    input_shape = gp.Coordinate((84, 268, 268))
-    offset = gp.Coordinate((40, 40, 40))
-    output_shape = input_shape - offset
-
-    inference_input_shape = gp.Coordinate((96, 484, 484))
-    inference_output_shape = inference_input_shape - offset
 
 
-input_size = input_shape * voxel_size
-output_size = output_shape * voxel_size
+# voxel_size = gp.Coordinate((20, 9, 9))  # zyx
 
-inference_input_size = inference_input_shape * voxel_size
-inference_output_size = inference_output_shape * voxel_size
+# padding = 'valid'
+
+# # U-Net with valid conv - offsets:
+# # - 3 blocks: (40, 40, 40)
+# # - 4 blocks: (88, 88, 88)
 
 
-out_dir = Path('./out')
-out_dir.mkdir(exist_ok=True)
-log_dir = out_dir / 'logs'
-model_dir = out_dir / 'models'
+# # input size in voxels
+
+# if padding == 'same':
+#     input_shape = gp.Coordinate((80, 80, 80))  # todo: increase (164, 164, 164)
+#     output_shape = input_shape
+# elif padding == 'valid':
+#     # s = 164
+#     # input_shape = gp.Coordinate((s, s, s))
+#     input_shape = gp.Coordinate((84, 268, 268))
+#     offset = gp.Coordinate((40, 40, 40))
+#     output_shape = input_shape - offset
+
+#     inference_input_shape = gp.Coordinate((96, 484, 484))
+#     inference_output_shape = inference_input_shape - offset
+
+
+# input_size = input_shape * voxel_size
+# output_size = output_shape * voxel_size
+
+# inference_input_size = inference_input_shape * voxel_size
+# inference_output_size = inference_output_shape * voxel_size
+
+
+# out_dir = Path('./out')
+# out_dir.mkdir(exist_ok=True)
+# log_dir = out_dir / 'logs'
+# model_dir = out_dir / 'models'
 
 
 """
