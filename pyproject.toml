@@ -1,16 +1,11 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "setuptools-scm[toml]>=7"]
+requires = ["setuptools>=67.6", "wheel", "setuptools-scm[toml]>=7.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nseg"
-# TODO: Put all deps here
-dependencies = [
-  "numpy",
-  "git+https://github.com/mdraw/gunpowder.git@patch-update-dtypes#egg=gunpowder",
-]
 requires-python = ">=3.10"
-description = "nseg"
+description = "Neuron Instance Segmentation"
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [
@@ -19,10 +14,11 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Image Processing",
     "Topic :: Scientific/Engineering :: Image Recognition",
 ]
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
 
 [project.scripts]
-train = "nseg.train_mtlsd:main"
+nseg-train = "nseg.train_mtlsd:main"
+nseg-segment = "nseg.segment_mtlsd:main"
 
 [tool.setuptools]
 packages = ["nseg"]
@@ -32,7 +28,6 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools_scm]
 write_to = "nseg/_version.py"
-
 
 [tool.ruff]
 line-length = 120

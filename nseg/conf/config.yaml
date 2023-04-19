@@ -66,7 +66,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: mlsd
+    project: nseg
     tags:
       - mtlsd
   # Visualization options
