@@ -22,7 +22,7 @@ from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_predict import Predict
 
 
-import nseg.eval_utils
+from nseg.eval_utils import CubeEvalResult
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
@@ -442,7 +442,7 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
     val_root = Path(cube_root)
     raw_paths = list(val_root.glob('*.zarr'))
 
-    cube_eval_results: dict[str, eval_utils.CubeEvalResult] = {}
+    cube_eval_results: dict[str, CubeEvalResult] = {}
     rand_voi_reports = {}
     assert len(raw_paths) > 0
 
@@ -525,7 +525,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
 
     rand_voi_report['val_loss'] = eval_loss
 
-    eval_result = eval_utils.CubeEvalResult(
+    eval_result = CubeEvalResult(
         report=rand_voi_report,
         arrays=dict(
             raw=raw,

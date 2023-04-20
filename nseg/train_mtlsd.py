@@ -22,9 +22,9 @@ from omegaconf import OmegaConf, DictConfig
 import wandb
 
 # from params import input_size, output_size, voxel_size
-from segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
-from gp_train import Train
+from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
+from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
+from nseg.gp_train import Train
 
 
 lsd_channels = {
