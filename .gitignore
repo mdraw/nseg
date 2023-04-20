@@ -115,3 +115,5 @@ out/
 
 training_data.zarr/
 validation_data.zarr/
+
+wandb/

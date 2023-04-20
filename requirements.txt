@@ -18,10 +18,14 @@ scikit-learn>=1.2.2
 scipy>=1.10
 seaborn>=0.12.2
 wandb>=0.14.2
+moviepy>=1.0.2,<2.0
 setuptools>=67.6
 tqdm>=4.65
 typing_extensions>=4.5
 # napari # TODO: constrain
+
+plotly
+zmesh
 
 lsds==0.1.3
 
