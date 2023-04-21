@@ -26,6 +26,12 @@ from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per
 from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_train import Train
 
+import randomname
+
+
+# TODO: Can we somehow register resolvers globally (for all modules)?
+OmegaConf.register_new_resolver('randomname', randomname.get_name)
+
 
 lsd_channels = {
     'offset (y)': 0,
@@ -48,7 +54,6 @@ aff_channels = {
     # 'affs_4': 4,
     # 'affs_5': 5,
 }
-
 
 
 def imshow(
@@ -515,7 +520,7 @@ def train(cfg: DictConfig) -> None:
                 val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
                 val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
 
-                # TODO: Looks like frag and seg are being binarized during logging but we don't want that!
+                # TODO: Colorize seg
 
                 wandb.log(
                     {

@@ -14,7 +14,7 @@ from scipy.ndimage import label
 from scipy.ndimage import maximum_filter
 from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
-from omegaconf import DictConfig
+from omegaconf import OmegaConf, DictConfig
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
@@ -23,6 +23,11 @@ from nseg.gp_predict import Predict
 
 
 from nseg.eval_utils import CubeEvalResult
+
+import randomname
+
+
+OmegaConf.register_new_resolver('randomname', randomname.get_name)
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
@@ -542,13 +547,21 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     result_zarr_root = cfg.eval.result_zarr_root
     write_groups = cfg.eval.get('write_groups', None)
     if enable_zarr_results and result_zarr_root is not None:
-        _name = raw_path.name
-        result_zarr_path = Path(result_zarr_root) / f'results_{_name}'
+        _fname = raw_path.name
+        _checkpoint_path = cfg.eval.checkpoint if checkpoint_path is None else checkpoint_path  # Fall back to cfg ckpt
+        _run_name = _get_run_name_from_checkpoint_path(_checkpoint_path)
+        result_zarr_path = Path(result_zarr_root) / f'results_{_run_name}_{_fname}'
         eval_result.write_zarr(result_zarr_path, groups=write_groups)
 
     print(f'VOI: {voi}')
 
     return eval_result
+
+
+def _get_run_name_from_checkpoint_path(checkpoint_path):
+    """Get name of parent directory of the checkpoint, i.e. the run name"""
+    checkpoint_path = Path(checkpoint_path)
+    return checkpoint_path.parent.name
 
 
 @hydra.main(version_base='1.3', config_path='conf', config_name='config')

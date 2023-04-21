@@ -1,17 +1,23 @@
 # Common path prefix
 path_prefix: ${oc.env:HOME}/lsdex
 
+# Generate random two-word codename using custom omgegaconf resolver
+shortname: ${randomname:}
+
+# Time stamp in ISO 8601-like format
+timestamp: ${now:%Y-%m-%d_%H-%M-%S}
+
 # Version tag
 v: v1
 
 hydra:
   run:
     # Where to write logs and config copies
-    dir: ${path_prefix}/${v}/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${path_prefix}/${v}/${hydra.job.name}/${shortname}_${timestamp}
 
 # -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
 tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
-val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
+val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n4/
 
 enable_zarr_results: false  # warning: concurrent writes possible
 device: cuda
@@ -67,6 +73,7 @@ wandb:
     dir: ${path_prefix}/${v}/
     entity: mdth
     project: nseg
+    name: ${shortname}
     tags:
       - mtlsd
   # Visualization options
@@ -100,10 +107,8 @@ training:
 eval:
   raw_name: volumes/raw
   gt_name: volumes/labels/neuron_ids
-  cube_root: /cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation_n1/
-  # checkpoint: ${path_prefix}/${v}/train_mtlsd/2023-03-15_13-42-24/model_checkpoint_89500
-  # checkpoint_path: /cajal/u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-11-13/model_checkpoint_20000_state_dict.pth
-  # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-03-25/model_checkpoint_20750_state_dict.pth
+  # cube_root: /cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation_n4/
+  cube_root: ${val_root}
   checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-02-04/model_checkpoint_20750_state_dict.pth
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   threshold: 0.043

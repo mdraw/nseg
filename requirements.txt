@@ -24,6 +24,7 @@ tqdm>=4.65
 typing_extensions>=4.5
 # napari # TODO: constrain
 
+randomname
 plotly
 zmesh
 
