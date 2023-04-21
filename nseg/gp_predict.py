@@ -1,12 +1,13 @@
 # Based on https://github.com/funkelab/gunpowder/blob/48768d2f3165cb52d8614069450a81f0599477ee/gunpowder/torch/nodes/predict.py
 
+import copy
 from gunpowder.array import ArrayKey, Array
 from gunpowder.array_spec import ArraySpec
 from gunpowder.ext import torch
 from gunpowder.nodes.generic_predict import GenericPredict
 
 import logging
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,9 @@ class Predict(GenericPredict):
 
         spawn_subprocess (bool, optional): Whether to run ``predict`` in a
             separate process. Default is false.
+
+        float16: Whether to run ``predict`` in half precision (float16).
+            Default is ``True``.
     """
 
     def __init__(
@@ -62,10 +66,11 @@ class Predict(GenericPredict):
         model,
         inputs: Dict[str, ArrayKey],
         outputs: Dict[Union[str, int], ArrayKey],
-        array_specs: Dict[ArrayKey, ArraySpec] = None,
-        checkpoint: str = None,
-        device="cuda",
-        spawn_subprocess=False
+        array_specs: Optional[Dict[ArrayKey, ArraySpec]] = None,
+        checkpoint: Optional[str] = None,
+        device: str = 'cuda',
+        spawn_subprocess: bool = False,
+        float16: bool = True
     ):
 
         self.array_specs = array_specs if array_specs is not None else {}
@@ -86,7 +91,10 @@ class Predict(GenericPredict):
         self.device = None  # to be set in start()
         self.model = model
         self.checkpoint = checkpoint
+        self.float16 = float16
 
+        self._inference_dtype = torch.float16 if self.float16 else torch.float32
+        self._output_dtype = torch.float32
         self.intermediate_layers = {}
         self.register_hooks()
 
@@ -115,6 +123,15 @@ class Predict(GenericPredict):
             elif hasattr(checkpoint, "keys") and "model_state_dict" in checkpoint:
                 self.model.load_state_dict(checkpoint["model_state_dict"])
 
+            if self.float16:  # Can cast in-place (destructive but okay since we're using a checkpoint)
+                self.model.to(dtype=self._inference_dtype)
+        else:
+            if self.float16:
+                # No checkpoint -> we have to be careful to not modify it since model could be reused later
+                #  in calling scope -> make a deep copy first
+                self.model = copy.deepcopy(self.model).to(dtype=self._inference_dtype)
+
+
     def predict(self, batch, request):
         inputs = self.get_inputs(batch)
         with torch.no_grad():
@@ -124,7 +141,7 @@ class Predict(GenericPredict):
 
     def get_inputs(self, batch):
         model_inputs = {
-            key: torch.as_tensor(batch[value].data, device=self.device)
+            key: torch.as_tensor(batch[value].data, device=self.device, dtype=self._inference_dtype)
             for key, value in self.inputs.items()
         }
         return model_inputs
@@ -159,7 +176,8 @@ class Predict(GenericPredict):
         for array_key, tensor in requested_outputs.items():
             spec = self.spec[array_key].copy()
             spec.roi = request[array_key].roi
-            batch.arrays[array_key] = Array(tensor.cpu().detach().numpy(), spec)
+            arr = tensor.cpu().detach().to(dtype=self._output_dtype).numpy()
+            batch.arrays[array_key] = Array(arr, spec)
 
     def stop(self):
         pass
