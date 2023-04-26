@@ -27,7 +27,7 @@ from nseg.eval_utils import CubeEvalResult
 import randomname
 
 
-OmegaConf.register_new_resolver('randomname', randomname.get_name)
+OmegaConf.register_new_resolver('randomname', randomname.get_name, replace=True)
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):

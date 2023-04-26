@@ -25,131 +25,13 @@ import wandb
 from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
 from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_train import Train
+from nseg.gp_sources import ZarrSource
 
 import randomname
 
 
 # TODO: Can we somehow register resolvers globally (for all modules)?
-OmegaConf.register_new_resolver('randomname', randomname.get_name)
-
-
-lsd_channels = {
-    'offset (y)': 0,
-    'offset (x)': 1,
-    'offset (z)': 2,
-    'orient (y)': 3,
-    'orient (x)': 4,
-    'orient (z)': 5,
-    'yx change': 6,  # todo: order correct?
-    'yz change': 7,
-    'xz change': 8,
-    'voxel count': 9
-}
-
-aff_channels = {
-    'affs_0': 0,  # todo: fix names
-    'affs_1': 1,
-    'affs_2': 2,
-    # 'affs_3': 3,
-    # 'affs_4': 4,
-    # 'affs_5': 5,
-}
-
-
-def imshow(
-        tb, it,
-        raw=None,
-        ground_truth=None,
-        target=None,
-        prediction=None,
-        h=None,
-        shader='jet',
-        subplot=True,
-        channel=0,
-        target_name='target',
-        prediction_name='prediction'):
-    raw = raw[:, :, :, raw.shape[-1] // 2] if raw is not None else None
-    ground_truth = ground_truth[:, :, :, ground_truth.shape[-1] // 2] if ground_truth is not None else None
-    target = target[:, :, :, :, target.shape[-1] // 2] if target is not None else None
-    prediction = prediction[:, :, :, :, prediction.shape[-1] // 2] if prediction is not None else None
-
-    rows = 0
-
-    if raw is not None:
-        rows += 1
-        cols = raw.shape[0] if len(raw.shape) > 2 else 1
-    if ground_truth is not None:
-        rows += 1
-        cols = ground_truth.shape[0] if len(ground_truth.shape) > 2 else 1
-    if target is not None:
-        rows += 1
-        cols = target.shape[0] if len(target.shape) > 2 else 1
-    if prediction is not None:
-        rows += 1
-        cols = prediction.shape[0] if len(prediction.shape) > 2 else 1
-
-    if subplot:
-        fig, axes = plt.subplots(
-            rows,
-            cols,
-            figsize=(10, 4),
-            sharex=True,
-            sharey=True,
-            squeeze=False)
-
-    if h is not None:
-        fig.subplots_adjust(hspace=h)
-
-    def wrapper(data, row, name="raw"):
-
-        if subplot:
-            if len(data.shape) == 2:
-                if name == 'raw':
-                    axes[0][0].imshow(data, cmap='gray')
-                    axes[0][0].set_title(name)
-                else:
-                    axes[row][0].imshow(create_lut(data))
-                    axes[row][0].set_title(name)
-
-            elif len(data.shape) == 3:
-                for i, im in enumerate(data):
-                    if name == 'raw':
-                        axes[0][i].imshow(im, cmap='gray')
-                        axes[0][i].set_title(name)
-                    else:
-                        axes[row][i].imshow(create_lut(im))
-                        axes[row][i].set_title(name)
-
-            else:
-                for i, im in enumerate(data):
-                    axes[row][i].imshow(im[channel], cmap=shader)
-                    axes[row][i].set_title(name + str(channel))
-
-
-        else:
-            if name == 'raw':
-                plt.imshow(data, cmap='gray')
-            if name == 'labels':
-                plt.imshow(data, alpha=0.5)
-
-    row = 0
-    if raw is not None:
-        wrapper(raw, row=row)
-        row += 1
-    if ground_truth is not None:
-        wrapper(ground_truth, row=row, name='labels')
-        row += 1
-    if target is not None:
-        wrapper(target, row=row, name=target_name)
-        row += 1
-    if prediction is not None:
-        wrapper(prediction, row=row, name=prediction_name)
-        row += 1
-    # for label in axes.xaxis.get_tick_labels()[1::2]:
-    #    print(len(label.get_text()))
-    tb.add_figure(axes[0][0].title.get_text(), fig, it)
-    return plt
-    # plt.show()
+OmegaConf.register_new_resolver('randomname', randomname.get_name, replace=True)
 
 
 def _get_include_fn(exts) -> Callable[[list[str]], bool]:
@@ -263,18 +145,20 @@ def train(cfg: DictConfig) -> None:
     labels_padding = gp.Coordinate((840, 720, 720))
 
     sources = tuple(
-        gp.ZarrSource(
+        ZarrSource(
             tr_file,
             {
                 raw: 'volumes/raw',
                 labels: 'volumes/labels/neuron_ids',
-                labels_mask: 'volumes/labels/labels_mask', # TODO: labels_mask?
+                labels_mask: 'volumes/labels/labels_mask',
             },
             {
                 raw: gp.ArraySpec(interpolatable=True),
                 labels: gp.ArraySpec(interpolatable=False),
                 labels_mask: gp.ArraySpec(interpolatable=False),
-            }) +
+            },
+            in_memory=True,
+        ) +
         gp.Normalize(raw) +
         # gp.Squeeze([raw], axis=0) +
         gp.Pad(raw, None) +
@@ -321,8 +205,7 @@ def train(cfg: DictConfig) -> None:
         labels,
         gt_lsds,
         lsds_mask=lsds_weights,
-        sigma=120,  # 80,  # todo: tune --> zf: 120, see https://github.com/funkelab/lsd/issues/9#issuecomment-1065299067
-        downsample=2  # todo: tune
+        **cfg.labels.lsd
     )
 
     neighborhood = cfg.labels.aff.nhood
@@ -464,43 +347,7 @@ def train(cfg: DictConfig) -> None:
                     },
                     step=batch.iteration
                 )
-                # for c in range(3):
-                #     img = wandb.Image(gt_affs_slice[c])
-                # gt_affs_img = get_img(batch[gt_affs].data)
-
-
-                # import IPython ; IPython.embed(); raise SystemExit
-
-
-                # for c in range(batch[raw].data.shape[1]):
-                #     imshow(tb=tb, it=batch.iteration,
-                #            raw=np.squeeze(batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]), channel=c)
-
-                # imshow(tb=tb, it=batch.iteration, ground_truth=batch[labels].data)
-
-                # if lsd_channels:
-                #     for n, c in lsd_channels.items():
-
-                #         if cfg.training.show_gt:
-                #             imshow(tb=tb, it=batch.iteration, target=batch[gt_lsds].data, target_name='gt ' + n,
-                #                    channel=c)
-                #         if cfg.training.show_pred:
-                #             imshow(tb=tb, it=batch.iteration, prediction=batch[pred_lsds].data,
-                #                    prediction_name='pred ' + n, channel=c)
-
-                # if aff_channels:
-                #     for n, c in aff_channels.items():
-
-                #         if cfg.training.show_gt:
-                #             imshow(tb=tb, it=batch.iteration, target=batch[gt_affs].data, target_name='gt ' + n,
-                #                    channel=c)
-                #         if cfg.training.show_pred:
-                #             imshow(tb=tb, it=batch.iteration, target=batch[pred_affs].data, target_name='pred ' + n,
-                #                    channel=c)
-
-                # fig, voi_split, voi_merge = eval_cube(save_path / f'model_checkpoint_{batch.iteration}', show_in_napari=cfg.training.show_in_napari)
                 checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
-                # TODO: Check both .pt and .pts
                 cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
                 rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
@@ -546,15 +393,8 @@ def train(cfg: DictConfig) -> None:
                     per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
                     wandb.log(per_cube_losses, commit=True, step=batch.iteration)
 
-                # tb.add_figure("eval", fig, batch.iteration)
-                # tb.add_scalar("voi_split", voi_split, batch.iteration)
-                # tb.add_scalar("voi_merge", voi_merge, batch.iteration)
-                # tb.add_scalar("voi", voi_split + voi_merge, batch.iteration)
-
-                # tb.flush()
             progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
             pass
-    # todo: save weights?
 
 
 @hydra.main(version_base='1.3', config_path='conf', config_name='config')

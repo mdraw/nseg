@@ -1,11 +1,14 @@
 # Common path prefix
 path_prefix: ${oc.env:HOME}/lsdex
 
+descr: ''
+
 # Generate random two-word codename using custom omgegaconf resolver
-shortname: ${randomname:}
+shortname: ${randomname:}${descr}
 
 # Time stamp in ISO 8601-like format
-timestamp: ${now:%Y-%m-%d_%H-%M-%S}
+# timestamp: ${now:%Y-%m-%d_%H-%M-%S}
+timestamp: ${now:%m-%d_%H-%M}
 
 # Version tag
 v: v1
@@ -13,11 +16,13 @@ v: v1
 hydra:
   run:
     # Where to write logs and config copies
-    dir: ${path_prefix}/${v}/${hydra.job.name}/${shortname}_${timestamp}
+    dir: ${path_prefix}/${v}/${hydra.job.name}/${timestamp}_${shortname}
 
 # -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
 tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
-val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n4/
+
+# val_root: ${path_prefix}/data/zebrafinch_msplit/validation/
+val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
 
 enable_zarr_results: false  # warning: concurrent writes possible
 device: cuda
@@ -29,8 +34,10 @@ labels:
   aff:
     nhood: [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
   lsd:
-    sigma: 120
-    downsample: 2
+#    sigma: 120
+#    downsample: 2
+    sigma: 108
+    downsample: 4
 
 
 model:
