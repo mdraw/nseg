@@ -1,6 +1,13 @@
+# Tell hydra how to construct the config from sub confs by default
+defaults:
+  - model: funlib_unet
+  - data_prep: default
+  - _self_
+
 # Common path prefix
 path_prefix: ${oc.env:HOME}/lsdex
 
+# Short description for manually tagging runs, to be set via hydra CLI
 descr: ''
 
 # Generate random two-word codename using custom omgegaconf resolver
@@ -18,6 +25,10 @@ hydra:
     # Where to write logs and config copies
     dir: ${path_prefix}/${v}/${hydra.job.name}/${timestamp}_${shortname}
 
+# Log config values with module logger
+log_config: true
+
+
 # -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
 tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
 
@@ -34,22 +45,22 @@ labels:
   aff:
     nhood: [[-1, 0, 0], [0, -1, 0], [0, 0, -1]]
   lsd:
-#    sigma: 120
-#    downsample: 2
-    sigma: 108
-    downsample: 4
+    sigma: 120
+    downsample: 2
+    # sigma: 108
+    # downsample: 4
 
 
-model:
-  num_lsds: 10
-  num_affs: 3
+# model:
+#   num_lsds: 10
+#   num_affs: 3
 
-  backbone:
-    model_class: nseg.shared.get_funlib_unet
-    num_fmaps: 14
-    offset: [40, 40, 40]
-    inp_shape: [84, 268, 268]
-    ev_inp_shape: [96, 484, 484]
+  # backbone:
+  #   model_class: nseg.shared.get_funlib_unet
+  #   num_fmaps: 14
+  #   offset: [40, 40, 40]
+  #   inp_shape: [84, 268, 268]
+  #   ev_inp_shape: [96, 484, 484]
 
   # backbone:
   #   model_class: elektronn3.models.resunet.UNet

@@ -20,7 +20,7 @@ from gunpowder.nodes.generic_train import GenericTrain
 from typing import Dict, Union, Optional
 
 from torch.utils import collect_env
-from omegaconf import DictConfig, OmegaConf
+from nseg.conf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 

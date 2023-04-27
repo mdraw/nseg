@@ -1,0 +1,12 @@
+_name: swin_unetr
+
+num_lsds: 10
+num_affs: 3
+
+backbone:
+  model_class: nseg.shared.get_swin_unetr_v2
+  num_fmaps: 14
+  inp_shape: [128, 128, 128]
+  offset: [0, 0, 0]
+  init_kwargs:
+    img_size: ${..inp_shape}

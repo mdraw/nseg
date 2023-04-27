@@ -17,7 +17,6 @@ from torch.utils import tensorboard
 from tqdm import tqdm
 
 import hydra
-from omegaconf import OmegaConf, DictConfig
 
 import wandb
 
@@ -26,12 +25,7 @@ from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per
 from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
-
-import randomname
-
-
-# TODO: Can we somehow register resolvers globally (for all modules)?
-OmegaConf.register_new_resolver('randomname', randomname.get_name, replace=True)
+from nseg.conf import OmegaConf, DictConfig
 
 
 def _get_include_fn(exts) -> Callable[[list[str]], bool]:

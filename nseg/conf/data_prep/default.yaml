@@ -1,0 +1,6 @@
+_name: default
+
+source_h5_root: '/wholebrain/fromhd/jkor/from_lustre/new j0126 segmentation gt'
+dest_flat_h5_root: '/cajal/scratch/projects/misc/mdraw/data/j0126_h5_gt_flat_numbered'
+include_info: true
+dry_run: true

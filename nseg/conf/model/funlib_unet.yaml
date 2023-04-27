@@ -1,0 +1,11 @@
+_name: funlib_unet
+
+num_lsds: 10
+num_affs: 3
+
+backbone:
+  model_class: nseg.shared.get_funlib_unet
+  num_fmaps: 14
+  offset: [40, 40, 40]
+  inp_shape: [84, 268, 268]
+  ev_inp_shape: [96, 484, 484]

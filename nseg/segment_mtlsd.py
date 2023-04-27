@@ -14,14 +14,13 @@ from scipy.ndimage import label
 from scipy.ndimage import maximum_filter
 from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
-from omegaconf import OmegaConf, DictConfig
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
 from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_predict import Predict
 
-
+from nseg.conf import OmegaConf, DictConfig
 from nseg.eval_utils import CubeEvalResult
 
 import randomname
