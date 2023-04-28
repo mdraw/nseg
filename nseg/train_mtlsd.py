@@ -76,9 +76,14 @@ def prefixkeys(dictionary: dict[str, Any], prefix: str) -> dict[str, Any]:
 
 def train(cfg: DictConfig) -> None:
     tr_root = Path(cfg.dataset.tr_root)
-    val_root = Path(cfg.dataset.val_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
-    val_files = [str(fp) for fp in val_root.glob('*.zarr')]
+
+    val_root = cfg.dataset.val_root
+    if val_root is None:
+        val_files = []
+    else:
+        val_root = Path(val_root)
+        val_files = [str(fp) for fp in val_root.glob('*.zarr')]
 
     # Get standard Python dict representation of omegaconf cfg (for wandb cfg logging)
     _cfg_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -341,51 +346,54 @@ def train(cfg: DictConfig) -> None:
                     },
                     step=batch.iteration
                 )
-                checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
-                cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
-                rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
-                # print(rand_voi_reports)
-                mean_report = get_mean_report(rand_voi_reports)
-                mean_report = prefixkeys(mean_report, prefix='validation/scalars/')
-                wandb.log(mean_report, step=batch.iteration)
+                if len(val_files) > 0:
 
-                cevr = next(iter(cube_eval_results.values()))
+                    checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                    cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
-                val_raw_img = get_zslice(cevr.arrays['raw'], as_wandb=True)
-                val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True)
-                val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True)
-                val_pred_affs_img = get_zslice(cevr.arrays['pred_affs'], as_wandb=True)
-                val_pred_lsds3_img = get_zslice(cevr.arrays['pred_lsds'][:3], as_wandb=True)
-                val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True)
-                val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
-                val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
+                    rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
+                    # print(rand_voi_reports)
+                    mean_report = get_mean_report(rand_voi_reports)
+                    mean_report = prefixkeys(mean_report, prefix='validation/scalars/')
+                    wandb.log(mean_report, step=batch.iteration)
 
-                # TODO: Colorize seg
+                    cevr = next(iter(cube_eval_results.values()))
 
-                wandb.log(
-                    {
-                        'validation/images/raw': val_raw_img,
-                        'validation/images/pred_seg': val_pred_seg_img,
-                        'validation/images/pred_frag': val_pred_frag_img,
-                        'validation/images/pred_affs': val_pred_affs_img,
-                        'validation/images/pred_lsds3': val_pred_lsds3_img,
-                        'validation/images/gt_seg': val_gt_seg_img,
-                        'validation/images/gt_affs': val_gt_affs_img,
-                        'validation/images/gt_lsds3': val_gt_lsds3_img,
-                    },
-                    step=batch.iteration
-                )
+                    val_raw_img = get_zslice(cevr.arrays['raw'], as_wandb=True)
+                    val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True)
+                    val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True)
+                    val_pred_affs_img = get_zslice(cevr.arrays['pred_affs'], as_wandb=True)
+                    val_pred_lsds3_img = get_zslice(cevr.arrays['pred_lsds'][:3], as_wandb=True)
+                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True)
+                    val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
+                    val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
 
-                # wandb.log(rand_voi_reports, commit=True)
-                if cfg.wandb.enable_per_cube_metrics:
-                    per_cube_vois = get_per_cube_metrics(rand_voi_reports, metric_name='voi')
-                    per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
-                    wandb.log(per_cube_vois, commit=True, step=batch.iteration)
+                    # TODO: Colorize seg
 
-                    per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='val_loss')
-                    per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
-                    wandb.log(per_cube_losses, commit=True, step=batch.iteration)
+                    wandb.log(
+                        {
+                            'validation/images/raw': val_raw_img,
+                            'validation/images/pred_seg': val_pred_seg_img,
+                            'validation/images/pred_frag': val_pred_frag_img,
+                            'validation/images/pred_affs': val_pred_affs_img,
+                            'validation/images/pred_lsds3': val_pred_lsds3_img,
+                            'validation/images/gt_seg': val_gt_seg_img,
+                            'validation/images/gt_affs': val_gt_affs_img,
+                            'validation/images/gt_lsds3': val_gt_lsds3_img,
+                        },
+                        step=batch.iteration
+                    )
+
+                    # wandb.log(rand_voi_reports, commit=True)
+                    if cfg.wandb.enable_per_cube_metrics:
+                        per_cube_vois = get_per_cube_metrics(rand_voi_reports, metric_name='voi')
+                        per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
+                        wandb.log(per_cube_vois, commit=True, step=batch.iteration)
+
+                        per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='val_loss')
+                        per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
+                        wandb.log(per_cube_losses, commit=True, step=batch.iteration)
 
             progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
             pass

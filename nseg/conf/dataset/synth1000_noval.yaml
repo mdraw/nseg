@@ -1,0 +1,8 @@
+tr_root: ${path_prefix}/data/synth1000/training/
+val_root: null
+
+raw_name: volumes/raw
+gt_name: volumes/labels/neuron_ids
+mask_name: volumes/labels/labels_mask
+voxel_size: [20, 9, 9]
+in_memory: true
