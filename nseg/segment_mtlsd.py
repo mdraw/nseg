@@ -137,7 +137,7 @@ def center_crop(a, b):  # todo: from secgan
 # TODO: Load model from checkpoint spec (support alternative models)
 def predict(cfg, raw_path, checkpoint_path=None):
 
-    voxel_size = gp.Coordinate(cfg.data.voxel_size)
+    voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
     # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
     input_shape = gp.Coordinate(
         cfg.model.backbone.get('ev_inp_shape', cfg.model.backbone.inp_shape)
@@ -163,7 +163,7 @@ def predict(cfg, raw_path, checkpoint_path=None):
     source = gp.ZarrSource(
         str(raw_path),
         {
-            raw: cfg.eval.raw_name
+            raw: cfg.dataset.raw_name
         },
         {
             raw: gp.ArraySpec(interpolatable=True)
@@ -434,9 +434,6 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
     return per_cube_metrics
 
 
-
-
-# def eval_cubes(cube_root, checkpoint, result_zarr_root=None, show_in_napari=False):
 def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     cube_root = cfg.eval.cube_root
     if checkpoint_path is None:  # fall back to cfg path if not overridden
@@ -463,18 +460,16 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
     return cube_eval_results
 
 
-# def run_eval(checkpoint, raw_dataset, raw_file, cfg, result_zarr_path=None):
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     raw, pred_lsds, pred_affs = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
 
     data = zarr.open(str(raw_path), 'r')
-    gt_seg = np.array(data[cfg.eval.gt_name])  # type: ignore
+    gt_seg = np.array(data[cfg.dataset.gt_name])  # type: ignore
 
     ws_affs = pred_affs
 
     # Get GT affs and LSDs
 
-    # TODO: Get from cfg, make sure to stay consistent with training setup
     aff_nhood = cfg.labels.aff.nhood
     gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
     cropped_pred_affs, _ = center_crop(pred_affs, gt_affs)

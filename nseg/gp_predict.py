@@ -134,7 +134,7 @@ class Predict(GenericPredict):
 
     def predict(self, batch, request):
         inputs = self.get_inputs(batch)
-        with torch.no_grad():
+        with torch.inference_mode():
             out = self.model.forward(**inputs)
         outputs = self.get_outputs(out, request)
         self.update_batch(batch, request, outputs)

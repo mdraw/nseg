@@ -75,8 +75,8 @@ def prefixkeys(dictionary: dict[str, Any], prefix: str) -> dict[str, Any]:
 
 
 def train(cfg: DictConfig) -> None:
-    tr_root = Path(cfg.tr_root)
-    val_root = Path(cfg.val_root)
+    tr_root = Path(cfg.dataset.tr_root)
+    val_root = Path(cfg.dataset.val_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
     val_files = [str(fp) for fp in val_root.glob('*.zarr')]
 
@@ -103,7 +103,7 @@ def train(cfg: DictConfig) -> None:
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
 
-    voxel_size = gp.Coordinate(cfg.data.voxel_size)
+    voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
     # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
     input_shape = gp.Coordinate(cfg.model.backbone.inp_shape)
     input_size = input_shape * voxel_size
@@ -142,9 +142,9 @@ def train(cfg: DictConfig) -> None:
         ZarrSource(
             tr_file,
             {
-                raw: 'volumes/raw',
-                labels: 'volumes/labels/neuron_ids',
-                labels_mask: 'volumes/labels/labels_mask',
+                raw: cfg.dataset.raw_name,
+                labels: cfg.dataset.gt_name,
+                labels_mask: cfg.dataset.mask_name,
             },
             {
                 raw: gp.ArraySpec(interpolatable=True),

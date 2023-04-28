@@ -1,6 +1,7 @@
 # Tell hydra how to construct the config from sub confs by default
 defaults:
   - model: funlib_unet
+  - dataset: lsd_j0126_msplit_val1
   - data_prep: default
   - _self_
 
@@ -28,18 +29,9 @@ hydra:
 # Log config values with module logger
 log_config: true
 
-
-# -> /cajal/scratch/projects/misc/mdraw/data/zebrafinch_msplit/training/
-tr_root: ${path_prefix}/data/zebrafinch_msplit/training/
-
-# val_root: ${path_prefix}/data/zebrafinch_msplit/validation/
-val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
-
 enable_zarr_results: false  # warning: concurrent writes possible
 device: cuda
 
-data:
-  voxel_size: [20, 9, 9]
 
 labels:
   aff:
@@ -49,40 +41,6 @@ labels:
     downsample: 2
     # sigma: 108
     # downsample: 4
-
-
-# model:
-#   num_lsds: 10
-#   num_affs: 3
-
-  # backbone:
-  #   model_class: nseg.shared.get_funlib_unet
-  #   num_fmaps: 14
-  #   offset: [40, 40, 40]
-  #   inp_shape: [84, 268, 268]
-  #   ev_inp_shape: [96, 484, 484]
-
-  # backbone:
-  #   model_class: elektronn3.models.resunet.UNet
-  #   num_fmaps: 14
-  #   offset: [40, 40, 40]
-  #   inp_shape: [84, 268, 268]
-  #   ev_inp_shape: [96, 484, 484]
-  #   init_kwargs:
-  #     in_channels: 1
-  #     out_channels: ${..num_fmaps}
-  #     start_filts: 64
-  #     n_blocks: 3
-  #     dim: 3
-  #     conv_mode: 'valid'
-
-  # backbone:
-  #   model_class: nseg.shared.get_swin_unetr_v2
-  #   num_fmaps: 14
-  #   inp_shape: [128, 128, 128]
-  #   offset: [0, 0, 0]
-  #   init_kwargs:
-  #     img_size: ${..inp_shape}
 
 
 wandb:
@@ -106,27 +64,24 @@ training:
   iterations: 100001
   save_every: 250
   # save_every: 2
-  seed: 0  # TODO
+  # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
   # num_workers: auto
   num_workers: 32
   # num_workers: 0
 
-  # Hyperparams
-  lr: 0.5e-4
-  batch_size: 1
+  # Main hyperparams
 
-  show_gt: true
-  show_pred: true
-  show_in_napari: false
+  # batch_size: 1
+  # lr: 0.5e-4
+
+  batch_size: 16
+  lr: 1.0e-3
 
   save_jit: null
 
 
 eval:
-  raw_name: volumes/raw
-  gt_name: volumes/labels/neuron_ids
-  # cube_root: /cajal/u/mdraw/lsdex/data/zebrafinch_msplit/validation_n4/
-  cube_root: ${val_root}
+  cube_root: ${dataset.val_root}
   checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-02-04/model_checkpoint_20750_state_dict.pth
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   threshold: 0.043
