@@ -151,7 +151,7 @@ def train(cfg: DictConfig) -> None:
                 labels: gp.ArraySpec(interpolatable=False),
                 labels_mask: gp.ArraySpec(interpolatable=False),
             },
-            in_memory=True,
+            in_memory=cfg.dataset.in_memory,
         ) +
         gp.Normalize(raw) +
         # gp.Squeeze([raw], axis=0) +

@@ -14,7 +14,7 @@ backbone:
     out_channels: ${..num_fmaps}
     # planar_blocks: [0,]
     # enc_res_blocks: 2
-    start_filts: 48
+    start_filts: 64
     n_blocks: 4
     dim: 3
     conv_mode: 'same'
