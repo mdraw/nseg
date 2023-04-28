@@ -99,14 +99,19 @@ def train(cfg: DictConfig) -> None:
 
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
-    labels_mask = gp.ArrayKey('GT_LABELS_MASK')
     gt_lsds = gp.ArrayKey('GT_LSDS')
     lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
     pred_lsds = gp.ArrayKey('PRED_LSDS')
     gt_affs = gp.ArrayKey('GT_AFFS')
-    gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+
+    if cfg.dataset.enable_mask:
+        labels_mask = gp.ArrayKey('GT_LABELS_MASK')
+        gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
+    else:
+        labels_mask = None
+        gt_affs_mask = None
 
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
     # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
@@ -130,47 +135,55 @@ def train(cfg: DictConfig) -> None:
     request = gp.BatchRequest()
     request.add(raw, input_size)
     request.add(labels, output_size)
-    request.add(labels_mask, output_size)
     request.add(gt_lsds, output_size)
     request.add(lsds_weights, output_size)
     request.add(pred_lsds, output_size)
     request.add(gt_affs, output_size)
-    request.add(gt_affs_mask, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
 
-    ## TODO: Padding?
-    # labels_padding = gp.Coordinate((350,550,550))
-    labels_padding = gp.Coordinate((840, 720, 720))
+    if cfg.dataset.enable_mask:
+        request.add(labels_mask, output_size)
+        request.add(gt_affs_mask, output_size)
 
-    sources = tuple(
-        ZarrSource(
+    source_data_dict = {
+        raw: cfg.dataset.raw_name,
+        labels: cfg.dataset.gt_name,
+    }
+    source_array_specs = {
+        raw: gp.ArraySpec(interpolatable=True),
+        labels: gp.ArraySpec(interpolatable=False),
+    }
+
+    if cfg.dataset.labels_padding is not None:
+        labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
+    if cfg.dataset.enable_mask:
+        source_data_dict[labels_mask] = cfg.dataset.mask_name
+        source_array_specs[labels_mask] = gp.ArraySpec(interpolatable=False)
+
+    sources = []
+
+    for tr_file in tr_files:
+        src = ZarrSource(
             tr_file,
-            {
-                raw: cfg.dataset.raw_name,
-                labels: cfg.dataset.gt_name,
-                labels_mask: cfg.dataset.mask_name,
-            },
-            {
-                raw: gp.ArraySpec(interpolatable=True),
-                labels: gp.ArraySpec(interpolatable=False),
-                labels_mask: gp.ArraySpec(interpolatable=False),
-            },
+            source_data_dict,
+            source_array_specs,
             in_memory=cfg.dataset.in_memory,
-        ) +
-        gp.Normalize(raw) +
-        # gp.Squeeze([raw], axis=0) +
-        gp.Pad(raw, None) +
-        gp.Pad(labels, labels_padding) +
-        gp.Pad(labels_mask, labels_padding) +
-        # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine.
-        # gp.RandomLocation(min_masked=0.5, mask=labels_mask)
-        gp.RandomLocation(min_masked=0.3, mask=labels_mask)
-        for tr_file in tr_files
-    )
+        )
+        src += gp.Normalize(raw)
+        src += gp.Pad(raw, None)
+        if cfg.dataset.labels_padding is not None:
+            src += gp.Pad(labels, labels_padding)
+        if cfg.dataset.enable_mask and cfg.dataset.labels_padding is not None:
+            src += gp.Pad(labels_mask, labels_padding)
+        if cfg.dataset.enable_mask:
+            # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine. TODO: get ratio from cfg.dataset
+            src += gp.RandomLocation(min_masked=0.3, mask=labels_mask)
+        else:
+            src += gp.RandomLocation()
+        sources.append(src)
 
-    # raw:      (h, w)
-    # labels:   (h, w)
+    sources = tuple(sources)
 
     pipeline = sources
 
@@ -197,7 +210,13 @@ def train(cfg: DictConfig) -> None:
         shift_max=0.1,
         z_section_wise=True
     )
-    pipeline += gp.GrowBoundary(labels, mask=labels_mask, steps=1, only_xy=True)
+
+    pipeline += gp.GrowBoundary(
+        labels,
+        mask=labels_mask,
+        steps=1,
+        only_xy=True
+    )
 
     # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
     pipeline += AddLocalShapeDescriptor(
@@ -218,7 +237,8 @@ def train(cfg: DictConfig) -> None:
         dtype=np.float32
     )
 
-    pipeline += gp.BalanceLabels(  # todo: needed?
+    # if cfg.dataset.enable_mask:
+    pipeline += gp.BalanceLabels(
         gt_affs,
         affs_weights,
         gt_affs_mask,

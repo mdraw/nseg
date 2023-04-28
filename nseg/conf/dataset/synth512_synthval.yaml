@@ -1,5 +1,5 @@
-tr_root: ${path_prefix}/data/synth1000/training/
-val_root: ${path_prefix}/data/zebrafinch_msplit/validation_n1/
+tr_root: ${path_prefix}/data/synth512/training_v2/
+val_root: ${path_prefix}/data/synth512/validation_v2/
 
 raw_name: volumes/raw
 gt_name: volumes/labels/neuron_ids
