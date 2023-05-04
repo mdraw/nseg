@@ -16,14 +16,14 @@ def create_data(
 
     raw = in_f['volumes/raw']
     labels = in_f['volumes/labels/neuron_ids']
-    
+
     container = zarr.open(name, 'a')
 
     index = 0
     for ds_name, data in [
         ('raw', raw),
         ('labels', labels)]:
-        
+
         container[f'{ds_name}/{index}'] = data
         container[f'{ds_name}/{index}'].attrs['offset'] = offset
         container[f'{ds_name}/{index}'].attrs['resolution'] = resolution

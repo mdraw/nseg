@@ -16,8 +16,6 @@ from lsd.train.gp import AddLocalShapeDescriptor
 from torch.utils import tensorboard
 from tqdm import tqdm
 
-import hydra
-
 import wandb
 
 # from params import input_size, output_size, voxel_size
@@ -25,7 +23,7 @@ from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per
 from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
-from nseg.conf import OmegaConf, DictConfig
+from nseg.conf import NConf, DictConfig, hydra
 
 
 def _get_include_fn(exts) -> Callable[[list[str]], bool]:
@@ -85,8 +83,8 @@ def train(cfg: DictConfig) -> None:
         val_root = Path(val_root)
         val_files = [str(fp) for fp in val_root.glob('*.zarr')]
 
-    # Get standard Python dict representation of omegaconf cfg (for wandb cfg logging)
-    _cfg_dict = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    # Get standard Python dict representation of NConf / omegaconf cfg (for wandb cfg logging)
+    _cfg_dict = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
     # Find the current hydra run dir
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
     # Set general save_path (also for non-hydra-related outputs) to hydra run dir so we have everything in one place
@@ -183,6 +181,7 @@ def train(cfg: DictConfig) -> None:
             src += gp.RandomLocation()
         sources.append(src)
 
+    assert len(sources) > 0
     sources = tuple(sources)
 
     pipeline = sources

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 import torch
 import gunpowder as gp
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import waterz
@@ -20,13 +19,8 @@ from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_predict import Predict
 
-from nseg.conf import OmegaConf, DictConfig
+from nseg.conf import NConf, DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
-
-import randomname
-
-
-OmegaConf.register_new_resolver('randomname', randomname.get_name, replace=True)
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
@@ -207,29 +201,29 @@ def predict(cfg, raw_path, checkpoint_path=None):
     pipeline = source
     pipeline += gp.Normalize(raw)
 
-    # raw shape = h,w
+    # raw shape = d,h,w
 
     # pipeline += gp.Unsqueeze([raw])
 
-    # raw shape = c,h,w
+    # raw shape = c,d,h,w
 
     pipeline += gp.Stack(1)
 
-    # raw shape = b,c,h,w
+    # raw shape = b,c,d,h,w
 
     pipeline += predict
     pipeline += scan
     # pipeline += gp.Squeeze([raw])
 
-    # raw shape = c,h,w
-    # pred_lsds shape = b,c,h,w
-    # pred_affs shape = b,c,h,w
+    # raw shape = c,d,h,w
+    # pred_lsds shape = b,c,d,h,w
+    # pred_affs shape = b,c,d,h,w
 
     pipeline += gp.Squeeze([raw, pred_lsds, pred_affs])
 
-    # raw shape = h,w
-    # pred_lsds shape = c,h,w
-    # pred_affs shape = c,h,w
+    # raw shape = d,h,w
+    # pred_lsds shape = c,d,h,w
+    # pred_affs shape = c,d,h,w
 
     predict_request = gp.BatchRequest()
 

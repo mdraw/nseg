@@ -36,7 +36,6 @@ def get_subgroup(arr: zarr.hierarchy.Group, grouppath: str) -> zarr.Array:
 
 
 def main():
-    import argparse
     parser = argparse.ArgumentParser(description='Show zarr neurons with labels in napari.')
     parser.add_argument('path')
     parser.add_argument('-r', default='volumes.raw')

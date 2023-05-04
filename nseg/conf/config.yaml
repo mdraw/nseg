@@ -1,7 +1,7 @@
 # Tell hydra how to construct the config from sub confs by default
 defaults:
   - model: funlib_unet
-  - dataset: lsd_j0126_msplit_val1
+  - dataset: j0126
   - data_prep: default
   - _self_
 
@@ -10,6 +10,7 @@ path_prefix: ${oc.env:HOME}/lsdex
 
 # Short description for manually tagging runs, to be set via hydra CLI
 descr: ''
+a: ${shortname}
 
 # Generate random two-word codename using custom omgegaconf resolver
 shortname: ${randomname:}${descr}
