@@ -4,6 +4,9 @@
 # This version replaces daisy calls with other libraries but aims to achieve the same functionality as the original code
 # probably had earlier before dependencies were messed up.
 
+
+# TODO: Render LSDs and affinities as RGB using add_layer(..., shader='rgb')
+
 #!/usr/bin/env python
 
 from funlib.show.neuroglancer import add_layer
@@ -15,6 +18,8 @@ import os
 import webbrowser
 import numpy as np
 import zarr
+import re
+from urllib.parse import urlparse
 
 from funlib.persistence import open_ds
 
@@ -31,6 +36,7 @@ parser.add_argument(
     type=str,
     nargs='+',
     action='append',
+    default=[['']],
     help="The datasets in the container to show")
 parser.add_argument(
     '--graphs',
@@ -47,10 +53,17 @@ parser.add_argument(
     default=False,
     const=True,
     help="If set, do not open a browser, just print a URL")
+parser.add_argument(
+    '--port',
+    '-p',
+    type=int,
+    nargs='?',
+    default=0,
+    help="Set port number. Default is 34343.")
 
 args = parser.parse_args()
 
-neuroglancer.set_server_bind_address('0.0.0.0')
+neuroglancer.set_server_bind_address('0.0.0.0', args.port)
 viewer = neuroglancer.Viewer()
 
 def to_slice(slice_str):
@@ -218,9 +231,13 @@ if args.graphs:
                 s.layers.append(name='graph', layer=graph_layer)
 
 url = str(viewer)
-print(url)
+_parsed_url = urlparse(url)
+localhost_url = _parsed_url._replace(netloc=re.sub('^[^:]*', 'localhost', _parsed_url.netloc)).geturl()
+print(f'Remote URL:\n  {url}\n\nLocal URL (use with SSH tunnel):\n  {localhost_url}\n')
+
+
 if os.environ.get("DISPLAY") and not args.no_browser:
     webbrowser.open_new(url)
 
-print("Press ENTER to quit")
+# print("Press ENTER to quit")
 input()
