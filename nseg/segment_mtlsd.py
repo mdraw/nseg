@@ -1,5 +1,6 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
 
+import logging
 from pathlib import Path
 from typing import Optional
 import torch
@@ -21,6 +22,22 @@ from nseg.gp_predict import Predict
 
 from nseg.conf import NConf, DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
+
+
+# Agglomeration method specs for waterz. From https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/workers/agglomerate_worker.py#L29
+waterz_merge_function = {
+    'hist_quant_10': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 10, ScoreValue, 256, false>>',
+    'hist_quant_10_initmax': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 10, ScoreValue, 256, true>>',
+    'hist_quant_25': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 25, ScoreValue, 256, false>>',
+    'hist_quant_25_initmax': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 25, ScoreValue, 256, true>>',
+    'hist_quant_50': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 50, ScoreValue, 256, false>>',
+    'hist_quant_50_initmax': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 50, ScoreValue, 256, true>>',
+    'hist_quant_75': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 75, ScoreValue, 256, false>>',
+    'hist_quant_75_initmax': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 75, ScoreValue, 256, true>>',
+    'hist_quant_90': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 90, ScoreValue, 256, false>>',
+    'hist_quant_90_initmax': 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 90, ScoreValue, 256, true>>',
+    'mean': 'OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>',
+}
 
 
 def spatial_center_crop_nd(large, small, ndim_spatial=2):
@@ -284,6 +301,26 @@ def watershed_from_affinities(
     return ret[0], boundary_distances
 
 
+# Based on the configuration resulting from https://github.com/funkelab/lsd/blob/a4955739b5defb252db2d466647b47db940bc157/README.md#agglomerate
+# Using LSD's default merge function "hist_quant_75" from https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/workers/agglomerate_worker.py#L36
+# Other params are based on the waterz call here (minus the ones that are irrelevant here): https://github.com/funkelab/lsd/blob/399e901ab9462da6119addceaa8a34aee7bcde2d/lsd/post/parallel_aff_agglomerate.py#L130
+def get_mf_segmentation(affinities, waterz_threshold=1.0, fragment_threshold=0.5, merge_function_name: str = 'hist_quant_75', gt_seg=None):
+    fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
+
+    merge_function_spec = waterz_merge_function[merge_function_name]
+
+    generator = waterz.agglomerate(
+        affs=affinities.astype(np.float32),  # .squeeze(1),
+        fragments=np.copy(fragments),  # .squeeze(0),
+        thresholds=[waterz_threshold],
+        scoring_function=merge_function_spec,
+        discretize_queue=256,
+    )
+    segmentation = next(generator)
+
+    return segmentation, fragments, boundary_distances
+
+
 def get_segmentation(affinities, waterz_threshold=0.043, fragment_threshold=0.5, gt_seg=None):
     fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
 
@@ -437,6 +474,10 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
     val_root = Path(cube_root)
     raw_paths = list(val_root.glob('*.zarr'))
 
+    if cfg.eval.max_eval_cubes is not None:
+        raw_paths = raw_paths[:cfg.eval.max_eval_cubes]
+        logging.info('')
+
     cube_eval_results: dict[str, CubeEvalResult] = {}
     rand_voi_reports = {}
     assert len(raw_paths) > 0
@@ -446,7 +487,6 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
         cevr = run_eval(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path, enable_zarr_results=enable_zarr_results)
         cube_eval_results[name] = cevr
-
 
     for name, rep in rand_voi_reports.items():
         print(f'{name}:\n{rep}\n')
@@ -499,10 +539,11 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     threshold = cfg.eval.threshold
     fragment_threshold = cfg.eval.fragment_threshold
 
-    pred_seg, pred_frag, boundary_distances = get_segmentation(
+    pred_seg, pred_frag, boundary_distances = get_mf_segmentation(
         ws_affs,
         waterz_threshold=threshold,
         fragment_threshold=fragment_threshold,
+        merge_function_name=cfg.eval.merge_function,
         gt_seg=gt_seg
     )
 

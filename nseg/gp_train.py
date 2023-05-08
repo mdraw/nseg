@@ -282,7 +282,6 @@ class Train(GenericTrain):
         self.optimizer.zero_grad()
 
         with autocast(enabled=self.enable_amp):
-
             model_outputs = self.model(**device_inputs)
             if isinstance(model_outputs, tuple):
                 outputs = {i: model_outputs[i] for i in range(len(model_outputs))}

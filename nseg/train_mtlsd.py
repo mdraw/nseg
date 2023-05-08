@@ -95,6 +95,9 @@ def train(cfg: DictConfig) -> None:
         num_workers = len(os.sched_getaffinity(0))  # Get cores available cpu cores for this (SLURM) job
         logging.info(f'num_workers: automatically using all {num_workers} available cpu cores')
 
+    # Silence log spam of "requesting complete mask..." and "allocating mask integral array..." messages
+    logging.getLogger('gunpowder.nodes.random_location').setLevel(logging.WARNING)
+
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
     gt_lsds = gp.ArrayKey('GT_LSDS')
