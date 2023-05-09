@@ -28,6 +28,7 @@ from nseg.gp_sources import ZarrSource
 from nseg.conf import NConf, DictConfig, hydra
 
 
+
 def _get_include_fn(exts) -> Callable[[list[str]], bool]:
     def include_fn(fn):
         return any(str(fn).endswith(ext) for ext in exts)
@@ -78,7 +79,15 @@ def prefixkeys(dictionary: dict[str, Any], prefix: str) -> dict[str, Any]:
     return prefdict
 
 
+def get_run_time_str(start_time: float) -> str:
+    delta_seconds = int(time.time() - start_time)
+    m, s = divmod(delta_seconds, 60)
+    h, m = divmod(m, 60)
+    return f'{h:d}:{m:02d}:{s:02d}'
+
+
 def train(cfg: DictConfig) -> None:
+    _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
 
@@ -259,6 +268,8 @@ def train(cfg: DictConfig) -> None:
     if num_workers > 0:
         pipeline += gp.PreCache(cache_size=40, num_workers=num_workers)
 
+    if cfg.training.enable_cudnn_benchmark and torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
 
     # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
 
@@ -286,6 +297,8 @@ def train(cfg: DictConfig) -> None:
         save_every=save_every,  # todo: increase,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
+        enable_amp=cfg.training.enable_amp,
+        enable_dynamo=cfg.training.enable_dynamo,
         save_jit=cfg.training.save_jit,
         example_input=example_input,
         cfg=cfg,
@@ -313,7 +326,7 @@ def train(cfg: DictConfig) -> None:
     with gp.build(pipeline):
         progress = tqdm(range(cfg.training.iterations), dynamic_ncols=True)
         for i in progress:
-            _t0 = time.time()
+            _step_start_time = time.time()
             batch = pipeline.request_batch(request)
             # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
@@ -322,8 +335,11 @@ def train(cfg: DictConfig) -> None:
                 tb.add_scalar("loss", batch.loss, batch.iteration)
                 wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
             if (i + 1) % save_every == 0:
-                logging.info('logging batch visualizations')
-
+                logging.info(
+                    f'Evaluating at step {batch.iteration}, '
+                    f'run time {get_run_time_str(_training_start_time)}, '
+                    f'loss {batch.loss:.4f}...'
+                )
                 # raw_cropped = batch[raw].data[:, :, start[0]:end[0], start[1]:end[1]]
                 # raw_sh = raw_cropped.shape
                 # raw_slice = raw_cropped[0, 0, rsh[2] // 2]
@@ -430,8 +446,12 @@ def train(cfg: DictConfig) -> None:
                         wandb.log(per_cube_losses, commit=True, step=batch.iteration)
 
             progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
-            wandb.log({'stats/speed_its_per_sec': 1 / (time.time() - _t0)})
-            pass
+
+            wandb.log(
+                {'stats/speed_its_per_sec': 1 / (time.time() - _step_start_time)},
+                step=batch.iteration,
+                commit=True
+            )
 
 
 @hydra.main(version_base='1.3', config_path='conf', config_name='config')

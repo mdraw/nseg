@@ -10,6 +10,7 @@ backbone:
   # inp_shape: [160, 160, 160]
   # ev_inp_shape: [180, 180, 180]
   inp_shape: [84, 268, 268]
-  ev_inp_shape: [96, 484, 484]
+  # ev_inp_shape: [96, 484, 484]
+  ev_inp_shape: [84, 268, 268]
 
 # Formula for suitable input shapes: 44 + 4*n, where n is an integer >= 0

@@ -97,6 +97,10 @@ class Train(GenericTrain):
 
             Enable automatic mixed precision training.
 
+        enable_dynamo:
+
+            Enable torchdynamo for training (torch.compile()).
+
         save_jit:
 
             Save jit-compiled model checkpoints in addition to other formats, either
@@ -130,6 +134,7 @@ class Train(GenericTrain):
         spawn_subprocess: bool = False,
         resume: bool = True,
         enable_amp: bool = True,
+        enable_dynamo: bool = False,
         save_jit: str = 'script',
         example_input: Optional[torch.Tensor] = None,
         cfg: Optional[DictConfig] = None,
@@ -161,6 +166,7 @@ class Train(GenericTrain):
         self.enable_amp = enable_amp
         self.save_jit = save_jit
         self.example_input = example_input
+        self.enable_dynamo = enable_dynamo
         self.cfg = cfg
 
         self.iteration = 0
@@ -267,22 +273,37 @@ class Train(GenericTrain):
             logger.info(f'Checking compatibility with torch.jit.trace() using example of shape {self.example_input.shape}...')
             jitmodel = torch.jit.trace(self.model, self.example_input.to(self.device))
 
+        if self.enable_dynamo:
+            # Use torchdynamo compiled version for training. Parameters are shared, so
+            #  the original self.model still gets the updated weights automatically.
+            self.active_model = torch.compile(self.model)
+        else:
+            self.active_model = self.model
+
+    def to_device_tensor_dict(self, np_array_dict: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
+        """ Optimized data copying of np.ndarrays to CUDA PyTorch tensors """
+        device_tensors = {}
+        for key, np_array in np_array_dict.items():
+            torch_tensor = torch.as_tensor(np_array)
+            if self.device.type == 'cuda':
+                # Use cuda-specific memory pinning for faster transfer
+                torch_tensor = torch_tensor.pin_memory(device=self.device)
+            torch_tensor = torch_tensor.to(device=self.device, non_blocking=True)
+            device_tensors[key] = torch_tensor
+        return device_tensors
 
     def train_step(self, batch, request):
-
         inputs = self.__collect_provided_inputs(batch)
         requested_outputs = self.__collect_requested_outputs(request)
 
         # keys are argument names of model forward pass
-        device_inputs = {
-            k: torch.as_tensor(v, device=self.device) for k, v in inputs.items()
-        }
+        device_inputs = self.to_device_tensor_dict(inputs)
 
         # get outputs. Keys are tuple indices or model attr names as in self.outputs
         self.optimizer.zero_grad()
 
         with autocast(enabled=self.enable_amp):
-            model_outputs = self.model(**device_inputs)
+            model_outputs = self.active_model(**device_inputs)
             if isinstance(model_outputs, tuple):
                 outputs = {i: model_outputs[i] for i in range(len(model_outputs))}
             elif isinstance(model_outputs, torch.Tensor):
@@ -297,10 +318,7 @@ class Train(GenericTrain):
             # Some inputs to the loss should come from the batch, not the model
             provided_loss_inputs = self.__collect_provided_loss_inputs(batch)
 
-            device_loss_inputs = {
-                k: torch.as_tensor(v, device=self.device)
-                for k, v in provided_loss_inputs.items()
-            }
+            device_loss_inputs = self.to_device_tensor_dict(provided_loss_inputs)
 
             # Some inputs to the loss function should come from the outputs of the model
             # Update device loss inputs with tensors from outputs if available

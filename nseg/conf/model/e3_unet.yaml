@@ -8,7 +8,8 @@ backbone:
   num_fmaps: 14
   offset: [40, 40, 40]
   inp_shape: [84, 268, 268]
-  ev_inp_shape: [96, 484, 484]
+  # ev_inp_shape: [96, 484, 484]
+  ev_inp_shape: ${.inp_shape}
   init_kwargs:
     in_channels: 1
     out_channels: ${..num_fmaps}
