@@ -16,7 +16,8 @@ if [ -z "$1" ]; then
 fi
 
 HOST=cajal
-PORT=43434
+# Automatically get a free port
+PORT="$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
 
 # Run a neuroglancer viewer on cajal01 per ssh
 # ssh $HOST "/cajal/nvmescratch/users/mdraw/anaconda/envs/nseg/bin/python -m nseg.viewer.nview --no-browser $@"
