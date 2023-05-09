@@ -185,8 +185,18 @@ def predict(cfg, raw_path, checkpoint_path=None):
     # source += gp.IntensityScaleShift(raw, 2, -1)  # Rescale to training range
 
     with gp.build(source):
-        total_input_roi = source.spec[raw].roi
-        total_output_roi = source.spec[raw].roi.grow(-context, -context)
+        if cfg.eval.roi_shape is None:
+            source_roi = source.spec[raw].roi
+            total_input_roi = source_roi
+            total_output_roi = source_roi.grow(-context, -context)
+        else:
+            _off = voxel_size * 0  # 0 is not intuitive but it works? The ROI shape is apparently auto-centered. # TODO: Verify
+            _sha = voxel_size * tuple(cfg.eval.roi_shape)
+            total_output_roi = gp.Roi(offset=_off, shape=_sha)
+            total_input_roi = total_output_roi.grow(context, context)
+            # total_input_roi = gp.Roi(offset=_off, shape=_sha)
+            # total_output_roi = total_input_roi.grow(-context, -context)
+
 
     # model = get_mtlsdmodel()  # MtlsdModel()
     model = build_mtlsdmodel(cfg.model)
@@ -557,7 +567,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
     rand_voi_report['voi'] = voi
 
-    rand_voi_report['val_loss'] = eval_loss
+    rand_voi_report['loss'] = eval_loss
 
     eval_result = CubeEvalResult(
         report=rand_voi_report,

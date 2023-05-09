@@ -1,10 +1,5 @@
-"""Simplify GT naming, preserving (just) the cube ID
+""" Copy and rename halfsynth j0126 data
 
-For example,
-- source file: /cajal/scratch/from_wholebrain/fromhd/jkor/from_lustre/new j0126 segmentation gt/batch2/j0126 cubeSegmentor category-volume_gt__011-gpatzer-20151013-184417-final.h5
-- dest file: /cajal/scratch/projects/misc/mdraw/data/j0126_h5_gt_flat_numbered/gt_11.h5
-
-Does the same for info.txt files
 """
 
 import logging

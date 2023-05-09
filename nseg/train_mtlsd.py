@@ -2,8 +2,10 @@
 
 import os
 import logging
+import time
 from pathlib import Path
 from typing import Any, Callable
+import skimage
 
 import matplotlib
 matplotlib.use('AGG')
@@ -43,7 +45,7 @@ def densify_labels(lab: np.ndarray, dtype=np.uint8) -> np.ndarray:
 
 
 # TODO: Squeeze singleton C dim?
-def get_zslice(vol, z_plane=None, squeeze=True, as_wandb=False):
+def get_zslice(vol, z_plane=None, squeeze=True, as_wandb=False, enable_rgb_labels=False):
     """
     Expects C, D, H, W or D, H, W volume and returns a 2D image slice compatible with `wandb.Image()`
 
@@ -59,6 +61,10 @@ def get_zslice(vol, z_plane=None, squeeze=True, as_wandb=False):
     if slc.ndim == 3:  # C, H, W
         slc = np.moveaxis(slc, 0, -1)
     # Else: H, W, nothing to do
+    if enable_rgb_labels:
+        lab = skimage.measure.label(slc)
+        rgb = skimage.color.label2rgb(lab, bg_label=0)
+        slc = rgb
     if as_wandb:
         return wandb.Image(slc)
     return slc
@@ -298,10 +304,16 @@ def train(cfg: DictConfig) -> None:
     # Root directory where recursive code file discovery should start
     _code_root = Path(__file__).parent
     wandb.run.log_code(root=_code_root, include_fn=_get_include_fn(cfg.wandb.code_include_fn_exts))
+    # Define summary metrics
+    wandb.define_metric('training/scalars/loss', summary='min')
+    wandb.define_metric('validation/scalars/loss', summary='min')
+    wandb.define_metric('validation/scalars/voi', summary='min')
+
 
     with gp.build(pipeline):
         progress = tqdm(range(cfg.training.iterations), dynamic_ncols=True)
         for i in progress:
+            _t0 = time.time()
             batch = pipeline.request_batch(request)
             # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
@@ -383,11 +395,11 @@ def train(cfg: DictConfig) -> None:
                     cevr = next(iter(cube_eval_results.values()))
 
                     val_raw_img = get_zslice(cevr.arrays['raw'], as_wandb=True)
-                    val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True)
-                    val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True)
+                    val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True, enable_rgb_labels=True)
+                    val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True, enable_rgb_labels=True)
                     val_pred_affs_img = get_zslice(cevr.arrays['pred_affs'], as_wandb=True)
                     val_pred_lsds3_img = get_zslice(cevr.arrays['pred_lsds'][:3], as_wandb=True)
-                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True)
+                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
                     val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
 
@@ -413,11 +425,12 @@ def train(cfg: DictConfig) -> None:
                         per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
                         wandb.log(per_cube_vois, commit=True, step=batch.iteration)
 
-                        per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='val_loss')
+                        per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='loss')
                         per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
                         wandb.log(per_cube_losses, commit=True, step=batch.iteration)
 
             progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
+            wandb.log({'stats/speed_its_per_sec': 1 / (time.time() - _t0)})
             pass
 
 

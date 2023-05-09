@@ -16,7 +16,7 @@ backbone:
     n_blocks: 3
     dim: 3
     normalization: 'none'
-    conv_mode: 'valid'
+    conv_mode: 'same'
 
 
 # Formula for suitable input shapes for n_blocks: 3: 44 + 4*n, where n is an integer >= 0

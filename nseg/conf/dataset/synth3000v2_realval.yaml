@@ -1,0 +1,10 @@
+tr_root: /cajal/nvmescratch/users/mdraw/data/synth3000v2/
+val_root: ${path_prefix}/data/j0126_gt_zarr_split/validation/
+
+raw_name: volumes/raw
+gt_name: volumes/labels/neuron_ids
+mask_name: volumes/labels/labels_mask
+voxel_size: [20, 9, 9]
+in_memory: false
+enable_mask: false
+labels_padding: null

@@ -7,5 +7,9 @@ backbone:
   model_class: nseg.shared.get_funlib_unet
   num_fmaps: 14
   offset: [40, 40, 40]
+  # inp_shape: [160, 160, 160]
+  # ev_inp_shape: [180, 180, 180]
   inp_shape: [84, 268, 268]
   ev_inp_shape: [96, 484, 484]
+
+# Formula for suitable input shapes: 44 + 4*n, where n is an integer >= 0

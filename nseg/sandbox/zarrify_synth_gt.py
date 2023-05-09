@@ -13,17 +13,32 @@ splits = [None]
 # splits = [None, 'tr', 'val']
 # split_z_idx = 384
 
-raw_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/from_h5_em_cfw_1.0_full_512_miki.npy')
-lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/cc3d_labels_with_prob_512.npy')
-zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/synth512.zarr')
+## Old 512
+# raw_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/from_h5_em_cfw_1.0_full_512_miki.npy')
+# lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/cc3d_labels_with_prob_512.npy')
+# zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth512/synth512.zarr')
 
+## Old 1000
 # raw_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth1000/from_h5_em_cfw_1.0_cut1000_miki.npy')
 # lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth1000/Franz_cut1000_ratio_6.0_with_prob.npy')
 # zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth1000/synth1000.zarr')
 
-# raw_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth3000/from_h5_em_cfw_1.0_full_3000_ana_v2.npy')
-# lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth3000/labels_al_4fold_dilation_darkerlight_wborders_new.hdf5')
-# zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth3000/synth3000.zarr')
+## Old 3000
+# raw_path = Path('/cajal/scratch/projects/misc/mdraw/data/_old_synth3000/from_h5_em_cfw_1.0_full_3000_ana_v2.npy')
+# lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/_old_synth3000/labels_al_4fold_dilation_darkerlight_wborders_new.hdf5')
+# zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/_old_synth3000/synth3000.zarr')
+
+## 3000 v3 (mismatch?)
+# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v3_test_labels_al_4fold_dilation_darkerlight_wborders_new_32b.npy')
+# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
+# # zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth3000v3/synth3000v3.zarr')  # HDD
+# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v3/synth3000v3.zarr')  # SSD
+
+## 3000 v2
+raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v2_labels_al_4fold_dilation_darkerlight_wborders_new.npy')
+# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
+lab_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/watershed_j0126_seg.npy')
+zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v2w/synth3000v2w.zarr')  # SSD
 
 
 for split in splits:
@@ -33,7 +48,6 @@ for split in splits:
     else:
         zpath = zarr_out_path
 
-    print(f'Creating {zpath}')
 
     # Synthetic cubes are fully labeled -> zero offset, same res for all subvolumes
     shared_attrs_dict = {'offset': [0, 0, 0], 'resolution': [20, 9, 9]}
@@ -45,22 +59,24 @@ for split in splits:
         lab = np.load(lab_path)
     elif lab_path.suffix in ['.hdf5', '.h5']:
         with h5py.File(lab_path, mode='r') as h5f:
-            lab = h5f['label_values'][()]
+            keys = list(h5f.keys())
+            assert len(keys) == 1
+            lab = h5f[keys[0]][()]
 
 
     raw_rescaled = (raw_f32 / 2. + 0.5) * 255  # [-1, 1] -> [0, 255]
     del raw_f32
     raw_u8 = raw_rescaled.astype(np.uint8)
     del raw_rescaled
-    assert raw_u8.ndim == 5
-    raw_u8 = raw_u8[0, 0]  # -> 3D
+    while raw_u8.ndim > 3:
+        raw_u8 = raw_u8[0]  # Squeeze until it's actual 3D
 
     lab_u64 = lab.astype(np.uint64)
 
     # Synthetic cubes are fully labeled -> nothing to be masked out
     lab_mask_u8 = np.ones_like(lab_u64, dtype=np.uint8)
 
-
+    print(f'Creating {zpath}')
     zstore = zarr.DirectoryStore(zpath)
     zroot = zarr.group(store=zstore, overwrite=True)
 
