@@ -7,7 +7,7 @@ backbone:
   model_class: elektronn3.models.resunet.UNet
   num_fmaps: 14
   offset: [88, 88, 88]
-  inp_shape: [160, 160, 160]
+  inp_shape: [132, 316, 316]  # results in same output shape as 3-block unet's default [84, 268, 268]
   # ev_inp_shape: [192, 192, 192]
   ev_inp_shape: ${.inp_shape}
   init_kwargs:

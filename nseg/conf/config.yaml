@@ -72,7 +72,7 @@ training:
   # num_workers: 0
   num_workers: 32
   enable_amp: true
-  enable_dynamo: true
+  enable_dynamo: false
   enable_cudnn_benchmark: true
 
   ## Main hyperparams
