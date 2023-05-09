@@ -1,4 +1,4 @@
-tr_root: ${path_prefix}/data/synth3000v3/
+tr_root: /cajal/nvmescratch/users/mdraw/data/synth3000v3/
 val_root: null
 
 raw_name: volumes/raw

@@ -28,17 +28,16 @@ splits = [None]
 # lab_path = Path('/cajal/scratch/projects/misc/mdraw/data/_old_synth3000/labels_al_4fold_dilation_darkerlight_wborders_new.hdf5')
 # zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/_old_synth3000/synth3000.zarr')
 
-## 3000 v3 (mismatch?)
-# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v3_test_labels_al_4fold_dilation_darkerlight_wborders_new_32b.npy')
-# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
-# # zarr_out_path = Path('/cajal/scratch/projects/misc/mdraw/data/synth3000v3/synth3000v3.zarr')  # HDD
-# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v3/synth3000v3.zarr')  # SSD
-
 ## 3000 v2
-raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v2_labels_al_4fold_dilation_darkerlight_wborders_new.npy')
-# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
-lab_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/watershed_j0126_seg.npy')
-zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v2w/synth3000v2w.zarr')  # SSD
+# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v2_labels_al_4fold_dilation_darkerlight_wborders_new.npy')
+# lab_path = Path('/cajal/scratch/users/anaml/3k_65000n_v2/labels_al_4fold_dilation_darkerlight_wborders_new.hdf5')
+# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v2/synth3000v2.zarr')  # SSD
+
+## 3000 v3
+raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v3_test_labels_al_4fold_dilation_darkerlight_wborders_new_32b.npy')
+lab_path = Path('/cajal/scratch/users/anaml/3k_65000n_v3_test/labels_al_4fold_dilation_darkerlight_wborders_new_32b.hdf5')
+zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v3/synth3000v3.zarr')  # SSD
+
 
 
 for split in splits:
