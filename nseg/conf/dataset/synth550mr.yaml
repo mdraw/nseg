@@ -1,10 +1,10 @@
-tr_root: ${path_prefix}/data/synth1000/training/
-val_root: null
+tr_root: /cajal/nvmescratch/users/mdraw/data/synth550mr/
+val_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/validation/
 
 raw_name: volumes/raw
 gt_name: volumes/labels/neuron_ids
 mask_name: volumes/labels/labels_mask
 voxel_size: [20, 9, 9]
-in_memory: true
+in_memory: false
 enable_mask: false
 labels_padding: null

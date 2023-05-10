@@ -394,7 +394,8 @@ def train(cfg: DictConfig) -> None:
                         'training/images/pred_affs': pred_affs_img,
                         'training/images/pred_lsds3': pred_lsds3_img,
                     },
-                    step=batch.iteration
+                    step=batch.iteration,
+                    commit=False
                 )
 
                 if len(val_files) > 0:
@@ -406,20 +407,18 @@ def train(cfg: DictConfig) -> None:
                     # print(rand_voi_reports)
                     mean_report = get_mean_report(rand_voi_reports)
                     mean_report = prefixkeys(mean_report, prefix='validation/scalars/')
-                    wandb.log(mean_report, step=batch.iteration)
+                    wandb.log(mean_report, step=batch.iteration, commit=False)
 
                     cevr = next(iter(cube_eval_results.values()))
 
-                    val_raw_img = get_zslice(cevr.arrays['raw'], as_wandb=True)
-                    val_pred_seg_img = get_zslice(cevr.arrays['pred_seg'], as_wandb=True, enable_rgb_labels=True)
-                    val_pred_frag_img = get_zslice(cevr.arrays['pred_frag'], as_wandb=True, enable_rgb_labels=True)
-                    val_pred_affs_img = get_zslice(cevr.arrays['pred_affs'], as_wandb=True)
-                    val_pred_lsds3_img = get_zslice(cevr.arrays['pred_lsds'][:3], as_wandb=True)
+                    val_raw_img = get_zslice(cevr.arrays['cropped_raw'], as_wandb=True)
+                    val_pred_seg_img = get_zslice(cevr.arrays['cropped_pred_seg'], as_wandb=True, enable_rgb_labels=True)
+                    val_pred_frag_img = get_zslice(cevr.arrays['cropped_pred_frag'], as_wandb=True, enable_rgb_labels=True)
+                    val_pred_affs_img = get_zslice(cevr.arrays['cropped_pred_affs'], as_wandb=True)
+                    val_pred_lsds3_img = get_zslice(cevr.arrays['cropped_pred_lsds'][:3], as_wandb=True)
                     val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
                     val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
-
-                    # TODO: Colorize seg
 
                     wandb.log(
                         {
@@ -432,21 +431,23 @@ def train(cfg: DictConfig) -> None:
                             'validation/images/gt_affs': val_gt_affs_img,
                             'validation/images/gt_lsds3': val_gt_lsds3_img,
                         },
-                        step=batch.iteration
+                        step=batch.iteration,
+                        commit=False
                     )
 
                     # wandb.log(rand_voi_reports, commit=True)
                     if cfg.wandb.enable_per_cube_metrics:
                         per_cube_vois = get_per_cube_metrics(rand_voi_reports, metric_name='voi')
                         per_cube_vois = prefixkeys(per_cube_vois, prefix='validation/scalars/')
-                        wandb.log(per_cube_vois, commit=True, step=batch.iteration)
+                        wandb.log(per_cube_vois, commit=False, step=batch.iteration)
 
                         per_cube_losses = get_per_cube_metrics(rand_voi_reports, metric_name='loss')
                         per_cube_losses = prefixkeys(per_cube_losses, prefix='validation/scalars/')
-                        wandb.log(per_cube_losses, commit=True, step=batch.iteration)
+                        wandb.log(per_cube_losses, commit=False, step=batch.iteration)
 
             progress.set_description(f'Step {batch.iteration}, loss {batch.loss:.4f}')
 
+            # Remember that this wand.log() call is the only one that uses commit=True, so don't just remove it.
             wandb.log(
                 {'stats/speed_its_per_sec': 1 / (time.time() - _step_start_time)},
                 step=batch.iteration,

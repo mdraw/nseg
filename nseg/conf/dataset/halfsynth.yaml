@@ -1,5 +1,5 @@
-tr_root: /cajal/nvmescratch/users/mdraw/data/synth3000v3/
-val_root: ${path_prefix}/data/j0126_gt_zarr_split/validation/
+tr_root: ${path_prefix}/data/halfsynth_zarr_all_training/
+val_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/validation/
 
 raw_name: volumes/raw
 gt_name: volumes/labels/neuron_ids

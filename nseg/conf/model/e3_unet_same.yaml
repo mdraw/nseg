@@ -6,9 +6,11 @@ num_affs: 3
 backbone:
   model_class: elektronn3.models.resunet.UNet
   num_fmaps: 14
-  offset: [40, 40, 40]
-  inp_shape: [84, 268, 268]
-  ev_inp_shape: [96, 484, 484]
+  offset: [0, 0, 0]
+  inp_shape: [64, 64, 64]
+  # ev_inp_shape: [96, 484, 484]
+  ev_inp_shape: [128, 128, 128]
+  # ev_inp_shape: [44, 44, 44]
   init_kwargs:
     in_channels: 1
     out_channels: ${..num_fmaps}

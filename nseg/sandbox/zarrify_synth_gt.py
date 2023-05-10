@@ -5,6 +5,9 @@ import zarr
 import h5py
 from pathlib import Path
 
+crop = None
+
+
 # chunk_shape = (128, 128, 128)
 chunk_shape = (256, 256, 256)
 
@@ -34,10 +37,26 @@ splits = [None]
 # zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v2/synth3000v2.zarr')  # SSD
 
 ## 3000 v3
-raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v3_test_labels_al_4fold_dilation_darkerlight_wborders_new_32b.npy')
-lab_path = Path('/cajal/scratch/users/anaml/3k_65000n_v3_test/labels_al_4fold_dilation_darkerlight_wborders_new_32b.hdf5')
-zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v3/synth3000v3.zarr')  # SSD
+# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/3k_65000n_v3_test_labels_al_4fold_dilation_darkerlight_wborders_new_32b.npy')
+# lab_path = Path('/cajal/scratch/users/anaml/3k_65000n_v3_test/labels_al_4fold_dilation_darkerlight_wborders_new_32b.hdf5')
+# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000v3/synth3000v3.zarr')  # SSD
 
+## 3000 Miki realistic
+# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/watershed_j0126_seg.npy')
+# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
+# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth3000mr/synth3000mr.zarr')  # SSD
+
+## Miki realistic 3000 -> crop 0:430, 0:430, 0:430
+# raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/watershed_j0126_seg.npy')
+# lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
+# zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth430mr/synth430mr.zarr')  # SSD
+# crop = (slice(0, 430), slice(0, 430), slice(0, 430))
+
+## Miki realistic 3000 -> crop 0:550, 0:550, 0:550
+raw_path = Path('/cajal/nvmescratch/users/riegerfr/miki_seg/watershed_j0126_seg.npy')
+lab_path = Path('/cajal/scratch/users/mkralik/watershed_j0126/seg.npy')
+zarr_out_path = Path('/cajal/nvmescratch/users/mdraw/data/synth550mr/synth550mr.zarr')  # SSD
+crop = (slice(0, 550), slice(0, 550), slice(0, 550))
 
 
 for split in splits:
@@ -71,6 +90,10 @@ for split in splits:
         raw_u8 = raw_u8[0]  # Squeeze until it's actual 3D
 
     lab_u64 = lab.astype(np.uint64)
+
+    if crop is not None:
+        raw_u8 = raw_u8[crop]
+        lab_u64 = lab_u64[crop]
 
     # Synthetic cubes are fully labeled -> nothing to be masked out
     lab_mask_u8 = np.ones_like(lab_u64, dtype=np.uint8)

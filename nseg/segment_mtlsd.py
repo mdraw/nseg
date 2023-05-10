@@ -19,6 +19,7 @@ from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
 from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
 from nseg.gp_predict import Predict
+from nseg.gp_sources import ZarrSource
 
 from nseg.conf import NConf, DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
@@ -145,7 +146,8 @@ def center_crop(a, b):  # todo: from secgan
     return a, b
 
 
-# TODO: Load model from checkpoint spec (support alternative models)
+# TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
+
 def predict(cfg, raw_path, checkpoint_path=None):
 
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
@@ -168,19 +170,32 @@ def predict(cfg, raw_path, checkpoint_path=None):
     scan_request.add(pred_lsds, output_size)
     scan_request.add(pred_affs, output_size)
 
+    # labels = gp.ArrayKey('LABELS')
+    # scan_request.add(labels, output_size)
+
     # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
     context = (input_size - output_size) / 2
 
-    source = gp.ZarrSource(
+    source_data_dict = {
+        raw: cfg.dataset.raw_name,
+        # labels: cfg.dataset.gt_name,
+    }
+    source_array_specs = {
+        raw: gp.ArraySpec(interpolatable=True),
+        # labels: gp.ArraySpec(interpolatable=False),
+    }
+
+    source = ZarrSource(
         str(raw_path),
-        {
-            raw: cfg.dataset.raw_name
-        },
-        {
-            raw: gp.ArraySpec(interpolatable=True)
-        })
+        source_data_dict,
+        source_array_specs,
+    )
 
     source += gp.Unsqueeze([raw])
+
+    # if cfg.dataset.labels_padding is not None:
+    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
+    #     source += gp.Pad(labels, labels_padding)
 
     # source += gp.IntensityScaleShift(raw, 2, -1)  # Rescale to training range
 
@@ -190,12 +205,18 @@ def predict(cfg, raw_path, checkpoint_path=None):
             total_input_roi = source_roi
             total_output_roi = source_roi.grow(-context, -context)
         else:
-            _off = voxel_size * 0  # 0 is not intuitive but it works? The ROI shape is apparently auto-centered. # TODO: Verify
+            _off = voxel_size * 0  # ~0 is not intuitive but it works? The ROI shape is apparently auto-centered~. Edit: Apparently not...
+            # _off = voxel_size *
+            raise NotImplementedError
             _sha = voxel_size * tuple(cfg.eval.roi_shape)
             total_output_roi = gp.Roi(offset=_off, shape=_sha)
             total_input_roi = total_output_roi.grow(context, context)
             # total_input_roi = gp.Roi(offset=_off, shape=_sha)
             # total_output_roi = total_input_roi.grow(-context, -context)
+
+        # _gtlabel_shape = voxel_size * (8, 8, 8)  # TODO!
+        # _gtlabel_off = voxel_size * (250, 250, 250)
+        # label_roi = gp.Roi(offset=_gtlabel_off, shape=_gtlabel_shape)
 
 
     # model = get_mtlsdmodel()  # MtlsdModel()
@@ -259,10 +280,12 @@ def predict(cfg, raw_path, checkpoint_path=None):
     predict_request.add(pred_lsds, total_output_roi.get_end())
     predict_request.add(pred_affs, total_output_roi.get_end())
 
+    # predict_request.add(labels, total_output_roi.get_end())
+
     with gp.build(pipeline):
         batch = pipeline.request_batch(predict_request)
 
-    return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data
+    return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data  #, batch[labels].data
 
 
 def watershed_from_boundary_distance(
@@ -554,10 +577,11 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         waterz_threshold=threshold,
         fragment_threshold=fragment_threshold,
         merge_function_name=cfg.eval.merge_function,
-        gt_seg=gt_seg
     )
 
+    cropped_pred_frag, _ = center_crop(pred_frag, gt_seg)
     cropped_pred_seg, _ = center_crop(pred_seg, gt_seg)
+    cropped_raw, _ = center_crop(raw, gt_seg)
 
     rand_voi_report = rand_voi(
         gt_seg,
@@ -577,6 +601,11 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
             pred_lsds=pred_lsds,
             pred_seg=pred_seg,
             pred_frag=pred_frag,
+            cropped_raw=cropped_raw,
+            cropped_pred_affs=cropped_pred_affs,
+            cropped_pred_lsds=cropped_pred_lsds,
+            cropped_pred_seg=cropped_pred_seg,
+            cropped_pred_frag=cropped_pred_frag,
             gt_seg=gt_seg,
             gt_affs=gt_affs,
             gt_lsds=gt_lsds,
