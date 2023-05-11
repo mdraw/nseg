@@ -97,6 +97,7 @@ def get_funlib_unet(
         ds_fact=((2, 2, 2), (2, 2, 2)),
         constant_upsample = True,
         padding='valid',
+        enable_batch_norm=False
 ):
     """Construct a funlib U-Net model as used in the LSD paper. Defaults to the paper's architecture config."""
 
@@ -112,7 +113,8 @@ def get_funlib_unet(
         kernel_size_down=ksd,
         kernel_size_up=ksu,
         constant_upsample=constant_upsample,
-        padding=padding
+        padding=padding,
+        enable_batch_norm=enable_batch_norm,
     )
 
 

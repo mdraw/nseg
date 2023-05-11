@@ -1,4 +1,4 @@
-tr_root: ${path_prefix}/data/halfsynth_zarr_all_training/
+tr_root: ${path_prefix}/data/combined_j0126_and_synth430mr_r1/
 val_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/validation/
 
 raw_name: volumes/raw

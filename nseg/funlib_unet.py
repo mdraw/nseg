@@ -16,7 +16,8 @@ class ConvPass(torch.nn.Module):
             out_channels,
             kernel_sizes,
             activation,
-            padding='valid'):
+            padding='valid',
+            enable_batch_norm=False):
 
         super(ConvPass, self).__init__()
 
@@ -46,6 +47,12 @@ class ConvPass(torch.nn.Module):
                         out_channels,
                         kernel_size,
                         padding=pad))
+                if enable_batch_norm:
+                    bn = {
+                        2: torch.nn.BatchNorm2d,
+                        3: torch.nn.BatchNorm3d,
+                    }[self.dims]
+                    layers.append(bn(out_channels))
             except KeyError:
                 raise RuntimeError("%dD convolution not implemented" % self.dims)
 
@@ -242,7 +249,8 @@ class UNet(torch.nn.Module):
             num_fmaps_out=None,
             num_heads=1,
             constant_upsample=False,
-            padding='valid'):
+            padding='valid',
+            enable_batch_norm=False):
         '''Create a U-Net::
 
             f_in --> f_left --------------------------->> f_right--> f_out
@@ -344,6 +352,7 @@ class UNet(torch.nn.Module):
         self.num_heads = num_heads
         self.in_channels = in_channels
         self.out_channels = num_fmaps_out if num_fmaps_out else num_fmaps
+        self.enable_batch_norm = enable_batch_norm
 
         # default arguments
 
@@ -376,7 +385,8 @@ class UNet(torch.nn.Module):
                 num_fmaps*fmap_inc_factor**level,
                 kernel_size_down[level],
                 activation=activation,
-                padding=padding)
+                padding=padding,
+                enable_batch_norm=enable_batch_norm)
             for level in range(self.num_levels)
         ])
         self.dims = self.l_conv[0].dims
@@ -413,7 +423,8 @@ class UNet(torch.nn.Module):
                     else num_fmaps_out,
                     kernel_size_up[level],
                     activation=activation,
-                    padding=padding)
+                    padding=padding,
+                    enable_batch_norm=enable_batch_norm)
                 for level in range(self.num_levels - 1)
             ])
             for _ in range(num_heads)

@@ -62,7 +62,7 @@ wandb:
 
 training:
   iterations: 400001
-  save_every: 1000
+  save_every: 2000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
 
