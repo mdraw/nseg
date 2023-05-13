@@ -1,0 +1,21 @@
+_name: funlib_unet_deep
+
+# TODO, currently not working
+
+num_lsds: 10
+num_affs: 3
+
+backbone:
+  model_class: nseg.shared.get_funlib_unet
+  num_fmaps: 14
+  offset: [40, 40, 40]
+  inp_shape: [132, 268, 268]  # results in same output shape as 3-block unet's default [84, 268, 268]
+  ev_inp_shape: [84, 268, 268]
+  init_kwargs:
+    enable_batch_norm: false
+    num_ds: 4
+
+
+
+# Formula for suitable input shapes: 100 + 8*n, where n is an integer >= 0
+

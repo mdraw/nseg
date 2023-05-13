@@ -367,8 +367,10 @@ def get_segmentation(affinities, waterz_threshold=0.043, fragment_threshold=0.5,
     return segmentation, fragments, boundary_distances
 
 
-def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold=0.5, gt_seg=None):
+def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold=0.5, merge_function_name='hist_quant_75', gt_seg=None):
     fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
+
+    merge_function_spec = waterz_merge_function[merge_function_name]
 
     vois = []
 
@@ -379,6 +381,8 @@ def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold
         affs=affinities.astype(np.float32),  # .squeeze(1),
         fragments=np.copy(fragments),  # .squeeze(0),
         thresholds=waterz_thresholds,
+        scoring_function=merge_function_spec,
+        discretize_queue=256,
     )
     for thresh, segmentation in zip(waterz_thresholds, generator, strict=True):
         segmentation, gt_seg = center_crop(segmentation, gt_seg)
@@ -389,7 +393,7 @@ def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold
             return_cluster_scores=False
         )
         voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
-        print(f'VOI: {voi}')
+        # print(f'VOI: {voi}')
         vois.append(voi)
 
     for t, v in zip(waterz_thresholds, vois, strict=True):
@@ -401,7 +405,10 @@ def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold
 
     print(f'Optimum threshold: {argmin_thresh}, with VOI {min_voi}')
 
-    return segmentation, fragments, boundary_distances
+    # TODO: Don't print, but return list of (argmin_thresh, min_voi) pairs so they can be globally evaluated across cubes
+
+    return argmin_thresh, min_voi
+    # return segmentation, fragments, boundary_distances
 
 
 def get_scoring_segmentation(affinities, fragment_threshold=0.5, epsilon_agglomerate=0, gt_seg=None):
@@ -499,20 +506,18 @@ def get_per_cube_metrics(reports: dict, metric_name: str) -> dict:
 
 
 def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
-    cube_root = cfg.eval.cube_root
+    cube_root = Path(cfg.eval.cube_root)
     if checkpoint_path is None:  # fall back to cfg path if not overridden
         checkpoint_path = cfg.eval.checkpoint_path
 
-    # 'model_checkpoint_50000'
-    val_root = Path(cube_root)
-    raw_paths = list(val_root.glob('*.zarr'))
+    raw_paths = list(cube_root.glob('*.zarr'))
 
     if cfg.eval.max_eval_cubes is not None:
         raw_paths = raw_paths[:cfg.eval.max_eval_cubes]
-        logging.info('')
+        logging.info(f'Limiting eval to {cfg.eval.max_eval_cubes} cubes')
 
     cube_eval_results: dict[str, CubeEvalResult] = {}
-    rand_voi_reports = {}
+    rand_voi_reports: dict[str, dict] = {}
     assert len(raw_paths) > 0
 
     for raw_path in raw_paths:
@@ -520,9 +525,19 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
         cevr = run_eval(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path, enable_zarr_results=enable_zarr_results)
         cube_eval_results[name] = cevr
+        rand_voi_reports[name] = cevr.report
+
+    logging.info(f'Results summary with\n- cube_root: {cfg.eval.cube_root}\n- checkpoint_path: {checkpoint_path}\n- Stats:\n')
+
+    # rand_voi_reports = {name: cube_eval_results[name].rand_voi_report for name in cube_eval_results.keys()}
 
     for name, rep in rand_voi_reports.items():
-        print(f'{name}:\n{rep}\n')
+        logging.info(f'{name}:\n{rep}\n')
+
+    mean_report = get_mean_report(rand_voi_reports)
+    mean_voi = mean_report['voi']
+    logging.info(f'Mean VOI: {mean_voi:.4f}')
+
 
     return cube_eval_results
 
@@ -562,15 +577,30 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         affs_prediction=torch.as_tensor(cropped_pred_affs),
         affs_target=torch.as_tensor(gt_affs),
         affs_weights=torch.as_tensor(affs_weights),
-    )
+    ).item()
 
-    print(f'Eval loss: {eval_loss.item():.3f}')
+    logging.info(f'Eval loss: {eval_loss:.3f}')
 
     # print(f'{pred_affs.shape=}, {ws_affs.shape=}')
 
     # higher thresholds will merge more, lower thresholds will split more
     threshold = cfg.eval.threshold
     fragment_threshold = cfg.eval.fragment_threshold
+
+    waterz_threshold_sweep_linspace = cfg.eval.waterz_threshold_sweep_linspace
+    if waterz_threshold_sweep_linspace is not None:
+        logging.info('Sweeping over waterz agglomeration thresholds...')
+        start, end, num = waterz_threshold_sweep_linspace
+        thresh_sweep_values = np.linspace(start, end, num)
+        argmin_thresh, min_voi = sweep_segmentation_threshs(
+            ws_affs,
+            waterz_thresholds=thresh_sweep_values,
+            fragment_threshold=fragment_threshold,
+            merge_function_name=cfg.eval.merge_function,
+            gt_seg=gt_seg,
+        )
+        logging.info(f'Sweep finished. Doing segmentation with argmin threshold {argmin_thresh}')
+        threshold = argmin_thresh
 
     pred_seg, pred_frag, boundary_distances = get_mf_segmentation(
         ws_affs,
@@ -621,7 +651,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         result_zarr_path = Path(result_zarr_root) / f'results_{_run_name}_{_fname}'
         eval_result.write_zarr(result_zarr_path, groups=write_groups)
 
-    print(f'VOI: {voi}')
+    logging.info(f'VOI: {voi}')
 
     return eval_result
 

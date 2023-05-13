@@ -39,3 +39,36 @@ wandb report link: https://api.wandb.ai/links/mdth/311xg0j9
 ### Co-train Syn. (real seg.) + GT (2:1)
 - dataset config: `combined_j0126_hsynth_tr_r2.yaml`
 - training data dir: `combined_j0126_and_halfsynth_zarr_all_training_r2/`
+
+
+
+
+## Eval on test cubes
+
+### step 158000
+
+- config A:
+  - merge_function: hist_quant_75
+  - threshold: 1.0
+- config B:
+  - merge_function: mean
+  - threshold: 0.043
+- config C:
+  - merge_function: hist_quant_75
+  - threshold: 0.5
+- config C:
+  - merge_function: hist_quant_75
+  - threshold: 0.1
+
+- `/u/mdraw/lsdex/v1/train_mtlsd/05-10_01-03_noisy-wrap/model_checkpoint_158000.pth`
+  - Mean VOI with config A: 2.8204
+  - Mean VOI with config B: 1.5041
+  - Mean VOI with config C: 2.8204
+  - Mean VOI with config D: 1.7527
+
+
+- `/u/mdraw/lsdex/v1/train_mtlsd/05-10_22-44_coral-jigsaw_cotrain_r2__q3/model_checkpoint_158000.pth`
+  - Mean VOI with config A: 2.3688
+  - Mean VOI with config B: 1.6367
+  - Mean VOI with config C: 2.1048
+  - Mean VOI with config D: 1.2276

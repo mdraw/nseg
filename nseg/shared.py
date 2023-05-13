@@ -93,14 +93,17 @@ def get_mtlsdmodel(padding='valid'):  # todo: also use advanced architectures
 def get_funlib_unet(
         in_channels=1,
         num_fmaps=14,
+        num_fmaps_out=None,
         fmap_inc_factor=5,
-        ds_fact=((2, 2, 2), (2, 2, 2)),
+        num_ds=2,
         constant_upsample = True,
         padding='valid',
         enable_batch_norm=False
 ):
     """Construct a funlib U-Net model as used in the LSD paper. Defaults to the paper's architecture config."""
 
+    ds_fact=((2, 2, 2), (2, 2, 2))
+    ds_fact = tuple([(2, 2, 2)] * num_ds)
     num_levels = len(ds_fact) + 1
     ksd = [[(3, 3, 3), (3, 3, 3)]] * num_levels
     ksu = [[(3, 3, 3), (3, 3, 3)]] * (num_levels - 1)
@@ -108,6 +111,7 @@ def get_funlib_unet(
     return funlib_unet.UNet(
         in_channels=in_channels,
         num_fmaps=num_fmaps,
+        num_fmaps_out=num_fmaps_out,
         fmap_inc_factor=fmap_inc_factor,
         downsample_factors=ds_fact,
         kernel_size_down=ksd,
