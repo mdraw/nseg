@@ -90,8 +90,8 @@ training:
 eval:
   max_eval_cubes: null  # Don't limit eval cubes (default)
   # max_eval_cubes: 1  # Only do eval on first cube, skip others
-  # cube_root: ${dataset.val_root}
-  cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
+  cube_root: ${dataset.val_root}
+  # cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
   checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-02-04/model_checkpoint_20750_state_dict.pth
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   fragment_threshold: 0.5
@@ -100,7 +100,7 @@ eval:
   waterz_threshold_sweep_linspace: # [0.0, 0.2, 201]  # Don't use that on the test set
 
   merge_function: hist_quant_75
-  threshold: 1.0
+  threshold: 0.01
 
   # merge_function: mean
   # threshold: 0.043
