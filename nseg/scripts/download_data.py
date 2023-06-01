@@ -5,15 +5,6 @@ import boto3
 import numpy as np
 
 
-# # list data
-# client.list_objects(Bucket=bucket, Prefix="funke")
-
-# # download directory structure file - this shows exactly how the s3 data is stored
-# client.download_file(
-#     Bucket=bucket,
-#     Key="funke/structure.md",
-#     Filename="structure.md")
-
 
 # function to download all files nested in a bucket path
 def downloadDirectory(
@@ -28,7 +19,7 @@ def downloadDirectory(
         's3',
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key)
-    
+
     bucket = resource.Bucket(bucket_name)
 
     for obj in bucket.objects.filter(Prefix=remote_path):
@@ -58,6 +49,16 @@ dataset_names = [
     # 'testing',
     '',
 ]
+
+# list data
+client.list_objects(Bucket=bucket, Prefix="funke")
+
+# download directory structure file - this shows exactly how the s3 data is stored
+client.download_file(
+    Bucket=bucket,
+    Key="funke/structure.md",
+    Filename="structure.md")
+
 
 for dataset_name in dataset_names:
     downloadDirectory(

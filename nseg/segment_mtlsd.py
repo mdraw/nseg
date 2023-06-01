@@ -533,6 +533,7 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
     for name, rep in rand_voi_reports.items():
         logging.info(f'{name}:\n{rep}\n')
+        # logging.info(f'{name}:\n{rep["voi"]:.4f}\n')  # Just log VOIs for now
 
     mean_report = get_mean_report(rand_voi_reports)
     mean_voi = mean_report['voi']
