@@ -274,7 +274,7 @@ def train(cfg: DictConfig) -> None:
     # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
 
     save_every = cfg.training.save_every
-    pipeline += Train(
+    trainer = Train(
         model,
         loss,
         optimizer,
@@ -304,6 +304,8 @@ def train(cfg: DictConfig) -> None:
         cfg=cfg,
     )
 
+    pipeline += trainer
+
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
 
 
@@ -324,7 +326,7 @@ def train(cfg: DictConfig) -> None:
 
 
     with gp.build(pipeline):
-        progress = tqdm(range(cfg.training.iterations), dynamic_ncols=True)
+        progress = tqdm(range(trainer.iteration, cfg.training.iterations), dynamic_ncols=True)
         for i in progress:
             _step_start_time = time.time()
             batch = pipeline.request_batch(request)
