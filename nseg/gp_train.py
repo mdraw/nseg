@@ -253,6 +253,7 @@ class Train(GenericTrain):
             checkpoint, self.iteration = self._get_latest_checkpoint(
                 self.checkpoint_basename
             )
+
             if checkpoint is not None:
 
                 logger.info("Resuming training from iteration %d", self.iteration)
@@ -261,6 +262,11 @@ class Train(GenericTrain):
                 checkpoint = torch.load(checkpoint, map_location=self.device)
                 self.model.load_state_dict(checkpoint["model_state_dict"])
                 self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+                try:
+                    self.schedulers['lr'].set_state_dict(checkpoint["lr_sched_state_dict"])
+                except:  # No valid scheduler in use
+                    logging.debug('LR scheduler not found, not loading scheduler state from checkpoint.', exc_info=True)
         else:
             logger.info("Starting training from scratch")
 
