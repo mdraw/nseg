@@ -8,6 +8,60 @@ from elektronn3.models import unet as e3unet
 from nseg import funlib_unet
 
 
+
+class HardnessEnhancedLoss(torch.nn.Module):
+    def __init__(
+            self,
+            enable_hardness_weighting=True,
+            # hardness_c=0.1,
+            hardness_alpha=0.01
+    ):
+        super().__init__()
+
+        self.enable_hardness_weighting = enable_hardness_weighting
+        self.hardness_alpha = hardness_alpha
+
+    def _calc_loss(self, pred, target, weights):
+
+        scaled = weights * (pred - target) ** 2
+
+        if len(torch.nonzero(scaled)) != 0:
+            mask = torch.masked_select(scaled, torch.gt(weights, 0))
+            loss = torch.mean(mask)
+
+        else:
+            loss = torch.mean(scaled)
+
+        return loss
+
+    def forward(
+            self,
+            lsds_prediction,
+            lsds_target,
+            lsds_weights,
+            affs_prediction,
+            affs_target,
+            affs_weights,
+            hardness_prediction,
+    ):
+        if self.enable_hardness_weighting:
+            lsds_weights = lsds_weights * hardness_prediction
+            affs_weights = affs_weights * hardness_prediction
+
+        lsd_loss = self._calc_loss(lsds_prediction, lsds_target, lsds_weights)
+        aff_loss = self._calc_loss(affs_prediction, affs_target, affs_weights)
+
+        seg_loss = lsd_loss + aff_loss
+        # TODO: Cloning won't hurt for sure, but is it necessary here? (official implementation uses clone)
+        seg_loss_copy_detached = seg_loss.clone().detach()
+
+        hardness_loss = - self.hardness_alpha * seg_loss_copy_detached
+
+        total_loss = lsd_loss + aff_loss + hardness_loss
+
+        return total_loss
+
+
 class WeightedMSELoss(torch.nn.MSELoss):
     def __init__(self):
         super(WeightedMSELoss, self).__init__()
@@ -221,52 +275,219 @@ def import_symbol(import_path: str) -> type:
     return cls
 
 
+class SimpleHead(nn.Module):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            gradient_detached=True,
+            activation_class=nn.Sigmoid
+    ):
+        self.gradient_detached = gradient_detached
+        self.conv = nn.Conv3d(in_channels, out_channels, 1)
+        self.activation = activation_class()
+
+    def forward(self, inp):
+        if self.gradient_detached:
+            inp = inp.detach()
+        out = self.activation(self.conv(inp))
+        return out
+
+
+def get_decoder(decoder_variant, in_channels, out_channels):
+    if decoder_variant == 'e3unet_s':
+        return e3unet.UNet(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            n_blocks=2,
+            normalization='none',
+            conv_mode='same'
+        )
+    elif decoder_variant == 'minimal':
+        return nn.Conv3d(in_channels, out_channels, 1)
+    elif decoder_variant == 'convs':
+        # num_layers = int(decoder_variant.split('_')[-1])
+        hidden_channels = 32
+        return nn.Sequential(
+            nn.Conv3d(in_channels, hidden_channels, 3, padding=1), nn.ReLU(),
+            nn.Conv3d(hidden_channels, hidden_channels, 3, padding=1), nn.ReLU(),
+            nn.Conv3d(hidden_channels, out_channels, 3, padding=1)
+        )
+    else:
+        raise ValueError(f'Invalid choice {decoder_variant=}')
+
+
+@torch.vmap
+def _vmap_norm(x: torch.Tensor) -> torch.Tensor:
+    """Divides each batch element (along dim 0) by its individual sum across all non-batch dimensions."""
+    return x / torch.sum(x)
+
+
+# class HardnessHead(nn.Module):
+#     """Hardness head forward pass of https://arxiv.org/abs/2305.08462
+
+#     # Following https://github.com/Menoly-xin/Hardness-Level-Learning/blob/df48aa76c034ad61d4486b894581ec67822666ea/mmsegmentation/mmseg/models/segmentors/hl_encoder_decoder.py#L158-L164
+#     """
+#     def __init__(
+#             self,
+#             in_channels,
+#             out_channels,
+#             gradient_detached=True,
+#             # activation_class=nn.Sigmoid,
+#             decoder_variant='e3unet_s',
+#             hardness_c=0.1,
+#             enable_original_batch_sum=False,
+#     ):
+#         self.gradient_detached = gradient_detached
+#         self.hardness_c = hardness_c
+#         self.decoder = get_decoder(decoder_variant, in_channels, out_channels)
+#         # self.decoder = nn.Conv3d(in_channels, out_channels, 1)
+#         # self.activation = activation_class()
+#         self.enable_original_batch_sum = enable_original_batch_sum
+
+
+#     def forward(self, inp):
+#         if self.gradient_detached:
+#             inp = inp.detach()
+#         # Raw hardness level prediction  (D)
+#         out = self.decoder(inp)
+#         # Calculate numerator of H by applying sigmoid and adding constant c
+#         out = torch.sigmoid(out) + self.hardness_c
+#         # Normalize to sum of 1
+#         # TODO: Investigate if the official implementation is wrong here:
+#         #  IMO we shouldn't divide by the sum of the full batch here but do the
+#         #  sum-normalization for each batch element separately.
+#         if self.enable_original_batch_sum:
+#             out /= out.sum()  # Official implementation
+#         else:
+#             # Apply sum scaling per batch index
+#             out = _vmap_norm(out)
+#         return out
+
+
+def finalize_hardness(
+        pre_hardness: torch.Tensor,
+        hardness_c: float = 0.1,
+        enable_original_batch_sum: bool = False,
+) -> torch.Tensor:
+    """
+    Get normalized hardness map H from "pre-hardness" D https://arxiv.org/abs/2305.08462
+
+    # Following https://github.com/Menoly-xin/Hardness-Level-Learning/blob/df48aa76c034ad61d4486b894581ec67822666ea/mmsegmentation/mmseg/models/segmentors/hl_encoder_decoder.py#L158-L164
+    """
+
+    # Raw hardness level prediction (D)
+    # Calculate numerator of H by applying sigmoid and adding constant c
+    out = torch.sigmoid(pre_hardness) + hardness_c
+    # Normalize to sum of 1
+    # TODO: Investigate if the official implementation is wrong here:
+    #  IMO we shouldn't divide by the sum of the full batch here but do the
+    #  sum-normalization for each batch element separately.
+    if enable_original_batch_sum:
+        out /= out.sum()  # Official implementation
+    else:
+        # Apply sum scaling per batch index
+        out = _vmap_norm(out)
+    return out
+
 def build_mtlsdmodel(model_cfg):
     backbone_class = import_symbol(model_cfg.backbone.model_class)
-    init_kwargs = model_cfg.backbone.get('init_kwargs', {})
-    backbone = backbone_class(**init_kwargs)
+    bb_init_kwargs = model_cfg.backbone.get('init_kwargs', {})
+    backbone = backbone_class(**bb_init_kwargs)
 
-    lsd_head = nn.Sequential(
+    # hardness_head_class = import_symbol(model_cfg.hardness_head.model_class)
+    # hh_init_kwargs = model_cfg.hardness_head.get('init_kwargs', {})
+    # hardness_head = hardness_head_class(**hh_init_kwargs)
+
+    lsd_fc = nn.Sequential(
         nn.Conv3d(model_cfg.backbone.num_fmaps, 10, 1),
         nn.Sigmoid()
     )
 
-    aff_head = nn.Sequential(
+    aff_fc = nn.Sequential(
         nn.Conv3d(model_cfg.backbone.num_fmaps, 3, 1),
         nn.Sigmoid()
     )
 
-    model = GeneralMtlsdModel(
-        backbone=backbone, lsd_head=lsd_head, aff_head=aff_head
+    hardness_fc = nn.Sequential(
+        nn.Conv3d(model_cfg.backbone.num_fmaps, 1, 1),
+        nn.Sigmoid()
+    )
+
+    # model = GeneralMtlsdModel(
+    model = HardnessEnhancedMtlsdModel(
+        backbone=backbone, lsd_fc=lsd_fc, aff_fc=aff_fc, hardness_fc=hardness_fc
     )
     return model
 
 
-class GeneralMtlsdModel(torch.nn.Module):
+# TODO: Experiment with turning the lsd_head and aff_head into full proper decoder heads
+# TODO: Think of better naming of heads - distinguish between big heads (decoders) and small heads (single conv layers)
+class HardnessEnhancedMtlsdModel(torch.nn.Module):
 
     def __init__(
             self,
             backbone: torch.nn.Module,
-            lsd_head: torch.nn.Module,
-            aff_head: torch.nn.Module,
+            lsd_fc: torch.nn.Module,
+            aff_fc: torch.nn.Module,
+            hardness_fc: torch.nn.Module,
     ):
         super().__init__()
 
         self.backbone = backbone
-        self.lsd_head = lsd_head
-        self.aff_head = aff_head
+        self.lsd_fc = lsd_fc
+        self.aff_fc = aff_fc
+        self.hardness_fc = hardness_fc
         self.register_module('backbone', backbone)
-        self.register_module('lsd_head', lsd_head)
-        self.register_module('aff_head', aff_head)
+        self.register_module('lsd_fc', lsd_fc)
+        self.register_module('aff_fc', aff_fc)
+        self.register_module('hardness_fc', hardness_fc)
 
     def forward(self, input):
         # pass raw through unet
-        z = self.backbone(input)
+        outputs = self.backbone(input)
+        assert len(outputs) == 2  # Hardcode for now - TODO: Re-enable support for other head output counts
+        z, pre_hardness = outputs
 
-        # pass output through heads
-        lsds = self.lsd_head(z)
-        affs = self.aff_head(z)
-        # print(input.shape, z.shape, lsds.shape, affs.shape)
+        # pass output through fcs
+        lsds = self.lsd_fc(z)
+        affs = self.aff_fc(z)
+        pre_hardness = self.hardness_fc(pre_hardness)
 
-        return lsds, affs
+        hardness = finalize_hardness(pre_hardness)
 
+        return lsds, affs, hardness
+
+# class GeneralMtlsdModel(torch.nn.Module):
+
+#     def __init__(
+#             self,
+#             backbone: torch.nn.Module,
+#             lsd_head: torch.nn.Module,
+#             aff_head: torch.nn.Module,
+#             hardness_head: torch.nn.Module,
+#     ):
+#         super().__init__()
+
+#         self.backbone = backbone
+#         self.lsd_head = lsd_head
+#         self.aff_head = aff_head
+#         self.hardness_head = hardness_head
+#         self.register_module('backbone', backbone)
+#         self.register_module('lsd_head', lsd_head)
+#         self.register_module('aff_head', aff_head)
+#         self.register_module('hardness_head', hardness_head)
+
+#     def forward(self, input):
+#         # pass raw through unet
+#         outputs = self.backbone(input)
+#         z, pre_hardness = outputs
+
+#         # pass output through heads
+#         lsds = self.lsd_head(z)
+#         affs = self.aff_head(z)
+
+#         # z = z.detach() if DETACH else z
+#         hardness = self.hardness_head(z)  # gradient detaching happens in head if configured
+
+#         return lsds, affs, hardness

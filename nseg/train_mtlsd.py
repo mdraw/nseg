@@ -121,6 +121,7 @@ def train(cfg: DictConfig) -> None:
     gt_affs = gp.ArrayKey('GT_AFFS')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     if cfg.dataset.enable_mask:
         labels_mask = gp.ArrayKey('GT_LABELS_MASK')
@@ -157,6 +158,7 @@ def train(cfg: DictConfig) -> None:
     request.add(gt_affs, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
+    request.add(pred_hardness, output_size)
 
     if cfg.dataset.enable_mask:
         request.add(labels_mask, output_size)
@@ -283,7 +285,8 @@ def train(cfg: DictConfig) -> None:
         },
         outputs={
             0: pred_lsds,
-            1: pred_affs
+            1: pred_affs,
+            2: pred_hardness,
         },
         loss_inputs={
             0: pred_lsds,
@@ -291,7 +294,8 @@ def train(cfg: DictConfig) -> None:
             2: lsds_weights,
             3: pred_affs,
             4: gt_affs,
-            5: affs_weights
+            5: affs_weights,
+            6: pred_hardness,
         },
         # log_dir = "./logs/"
         save_every=save_every,  # todo: increase,

@@ -1,0 +1,31 @@
+_name: funlib_unet
+
+num_lsds: 10
+num_affs: 3
+
+backbone:
+  model_class: nseg.shared.get_funlib_unet
+  num_fmaps: 14
+  offset: [40, 40, 40]
+  # inp_shape: [160, 160, 160]
+  # ev_inp_shape: [180, 180, 180]
+  inp_shape: [84, 268, 268]
+  # ev_inp_shape: [96, 484, 484]
+  ev_inp_shape: [84, 268, 268]
+  init_kwargs:
+    enable_batch_norm: false
+    # num_fmaps_out: 14
+    # num_fmaps: 14  # increased width
+    num_heads: 2
+    active_head_ids: [0, 1]  # segmentation head, hardness learning head
+    detached_head_ids: [1, ]  # gradient detach hardness learning head
+
+# hardness_head:
+#   model_class: nseg.shared.HardnessHead
+#   init_kwargs:
+#     in_channels: ${model.backbone.num_fmaps}
+#     out_channels: 1
+#     gradient_detached: true
+
+
+# Formula for suitable input shapes: 44 + 4*n, where n is an integer >= 0
