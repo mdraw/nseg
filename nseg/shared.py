@@ -28,9 +28,28 @@ class HardnessEnhancedLoss(torch.nn.Module):
     @staticmethod
     def _scaled_mse(pred, target, weights):
         scaled = weights * (pred - target) ** 2
-        if len(torch.nonzero(scaled)) != 0:
-            scaled = torch.masked_select(scaled, torch.gt(weights, 0))
-        return scaled
+        # Reduce channel dim 1 to its mean but keep singleton channel dim. N,C,D,H,W -> N,1,D,H,W
+        scaled_mean = torch.mean(scaled, 1).unsqueeze(1)
+        return scaled_mean
+
+    @staticmethod
+    @torch.no_grad()
+    def _compute_mask(*weights, mode='and'):
+        """Combine weights into a mask by sequential logical "and" or "or"."""
+        if mode == 'and':
+            mask_init = torch.ones_like
+            bin_op = torch.logical_and
+        elif mode == 'or':
+            mask_init = torch.zeros_like
+            bin_op = torch.logical_or
+
+        _w1 = weights[0][:, 0]
+        mask = mask_init(_w1, dtype=torch.bool)
+        for weight in weights:
+            for c in range(weight.shape[1]):
+                mask = bin_op(mask, weight[:, c] > 0)
+
+        return mask
 
     def forward(
             self,
@@ -42,14 +61,13 @@ class HardnessEnhancedLoss(torch.nn.Module):
             affs_weights,
             hardness_prediction,
     ):
-        if self.enable_hardness_weighting:
-            lsds_weights = lsds_weights * hardness_prediction
-            affs_weights = affs_weights * hardness_prediction
-
         lsd_loss = self._scaled_mse(lsds_prediction, lsds_target, lsds_weights)
         aff_loss = self._scaled_mse(affs_prediction, affs_target, affs_weights)
 
         seg_loss = lsd_loss + aff_loss
+        if self.enable_hardness_weighting:
+            seg_loss *= hardness_prediction
+
         seg_loss_copy_detached = seg_loss.clone().detach()
 
         if self.hardness_loss_formula == 'original_hl':
@@ -61,7 +79,21 @@ class HardnessEnhancedLoss(torch.nn.Module):
         else:
             raise ValueError(f'{self.hardness_loss_formula=} unkown.')
 
-        total_loss = lsd_loss + aff_loss + hardness_loss
+        total_loss = seg_loss + hardness_loss
+        # print(f'{seg_loss=}, {hardness_loss=}, {total_loss=}')
+
+        mask = self._compute_mask(lsds_weights, affs_weights)
+        # mask = lsds_weights[:, 0] > 0
+
+        if torch.any(mask):
+            # Only keep elements that are not masked out, flatten to 1D
+            total_loss = torch.masked_select(total_loss, mask)
+        else:
+            # mask is 0 everywhere -> masked_select would return a 0-element tensor,
+            # so we just skip this and use total_loss instead. -> Mean loss is 0.
+            total_loss = total_loss * 0.
+            print('all masked out')
+
         if self.enable_mean_reduction:
             total_loss = torch.mean(total_loss)
 
@@ -376,7 +408,8 @@ def _vmap_norm(x: torch.Tensor) -> torch.Tensor:
 def finalize_hardness(
         pre_hardness: torch.Tensor,
         hardness_c: float = 0.1,
-        enable_original_batch_sum: bool = True,
+        enable_original_batch_sum: bool = False,
+        enable_normalization: bool = False
 ) -> torch.Tensor:
     """
     Get normalized hardness map H from "pre-hardness" D https://arxiv.org/abs/2305.08462
@@ -387,15 +420,16 @@ def finalize_hardness(
     # Raw hardness level prediction (D)
     # Calculate numerator of H by applying sigmoid and adding constant c
     out = torch.sigmoid(pre_hardness) + hardness_c
-    # Normalize to sum of 1
-    # TODO: Investigate if the official implementation is wrong here:
-    #  IMO we shouldn't divide by the sum of the full batch here but do the
-    #  sum-normalization for each batch element separately.
-    if enable_original_batch_sum:
-        out /= out.sum()  # Official implementation
-    else:
-        # Apply sum scaling per batch index
-        out = _vmap_norm(out)
+    if enable_normalization:
+        # Normalize to sum of 1
+        # TODO: Investigate if the official implementation is wrong here:
+        #  IMO we shouldn't divide by the sum of the full batch here but do the
+        #  sum-normalization for each batch element separately.
+        if enable_original_batch_sum:
+            out /= out.sum()  # Official implementation
+        else:
+            # Apply sum scaling per batch index
+            out = _vmap_norm(out)
     return out
 
 def build_mtlsdmodel(model_cfg):
@@ -461,7 +495,6 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         lsds = self.lsd_fc(z)
         affs = self.aff_fc(z)
         pre_hardness = self.hardness_fc(pre_hardness)
-
         hardness = finalize_hardness(pre_hardness)
 
         return lsds, affs, hardness

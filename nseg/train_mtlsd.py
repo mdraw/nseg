@@ -22,7 +22,7 @@ import wandb
 
 # from params import input_size, output_size, voxel_size
 from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss
+from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
 from nseg.conf import NConf, DictConfig, hydra
@@ -146,7 +146,12 @@ def train(cfg: DictConfig) -> None:
         *cfg.model.backbone.inp_shape,
     )
 
-    loss = HardnessEnhancedLoss()
+    # loss = HardnessEnhancedLoss(cfg.loss.init_kwargs)
+
+    loss_class = import_symbol(cfg.loss.loss_class)
+    loss_init_kwargs = cfg.loss.get('init_kwargs', {})
+    loss = loss_class(**loss_init_kwargs)
+
     optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
 
     request = gp.BatchRequest()
@@ -393,12 +398,16 @@ def train(cfg: DictConfig) -> None:
                 pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
                 pred_lsds3_img = wandb.Image(pred_lsds3_slice)
 
+                pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
+                pred_hardness_img = wandb.Image(pred_hardness_slice)
+
                 wandb.log(
                     {
                         'training/images/gt_seg_overlay': gt_seg_overlay_img,
                         'training/images/gt_affs': gt_affs_img,
                         'training/images/pred_affs': pred_affs_img,
                         'training/images/pred_lsds3': pred_lsds3_img,
+                        'training/images/pred_hardness': pred_hardness_img,
                     },
                     step=batch.iteration,
                     commit=False

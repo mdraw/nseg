@@ -60,9 +60,17 @@ wandb:
   # Include only files with these extensions
   code_include_fn_exts: ['.py', '.json', '.yaml', '.txt']
 
+loss:
+  loss_class: nseg.shared.HardnessEnhancedLoss
+  init_kwargs:
+    enable_hardness_weighting: true
+    hardness_loss_formula: mse
+    hardness_alpha: 0.01
+    enable_mean_reduction: true
+
 training:
   iterations: 400001
-  save_every: 200
+  save_every: 2000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
 
@@ -70,16 +78,21 @@ training:
 
   # num_workers: auto
   # num_workers: 0
-  # num_workers: 32
-  num_workers: 8
+  num_workers: 32
+  # num_workers: 8
   enable_amp: true
+  # enable_amp: false
   enable_dynamo: false
   enable_cudnn_benchmark: true
+  # enable_cudnn_benchmark: false
 
   ## Main hyperparams
 
   batch_size: 1
   lr: 0.5e-4
+
+  # batch_size: 8
+  # lr: 5.0e-4
 
   # batch_size: 16
   # lr: 1.0e-3
@@ -89,8 +102,8 @@ training:
 
 # TODO: eval subconfigs (default - testing; default - validation; agglo thresh sweep - validation)
 eval:
-  max_eval_cubes: null  # Don't limit eval cubes (default)
-  # max_eval_cubes: 1  # Only do eval on first cube, skip others
+  # max_eval_cubes: null  # Don't limit eval cubes (default)
+  max_eval_cubes: 1  # Only do eval on first cube, skip others
   cube_root: ${dataset.val_root}
   # cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
   checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-02-04/model_checkpoint_20750_state_dict.pth
