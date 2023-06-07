@@ -22,7 +22,7 @@ import wandb
 
 # from params import input_size, output_size, voxel_size
 from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
+from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
 from nseg.conf import NConf, DictConfig, hydra
@@ -146,7 +146,7 @@ def train(cfg: DictConfig) -> None:
         *cfg.model.backbone.inp_shape,
     )
 
-    loss = WeightedMSELoss()
+    loss = HardnessEnhancedLoss()
     optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
 
     request = gp.BatchRequest()

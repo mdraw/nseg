@@ -48,7 +48,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg
+    project: nseg_hl
     name: ${shortname}
     tags:
       - mtlsd
@@ -62,7 +62,7 @@ wandb:
 
 training:
   iterations: 400001
-  save_every: 2000
+  save_every: 200
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
 
@@ -70,7 +70,8 @@ training:
 
   # num_workers: auto
   # num_workers: 0
-  num_workers: 32
+  # num_workers: 32
+  num_workers: 8
   enable_amp: true
   enable_dynamo: false
   enable_cudnn_benchmark: true

@@ -13,26 +13,24 @@ class HardnessEnhancedLoss(torch.nn.Module):
     def __init__(
             self,
             enable_hardness_weighting=True,
+            hardness_loss_formula: str = 'original_hl',
             # hardness_c=0.1,
-            hardness_alpha=0.01
+            hardness_alpha=0.01,
+            enable_mean_reduction=True
     ):
         super().__init__()
 
         self.enable_hardness_weighting = enable_hardness_weighting
+        self.hardness_loss_formula = hardness_loss_formula
         self.hardness_alpha = hardness_alpha
+        self.enable_mean_reduction = enable_mean_reduction
 
-    def _calc_loss(self, pred, target, weights):
-
+    @staticmethod
+    def _scaled_mse(pred, target, weights):
         scaled = weights * (pred - target) ** 2
-
         if len(torch.nonzero(scaled)) != 0:
-            mask = torch.masked_select(scaled, torch.gt(weights, 0))
-            loss = torch.mean(mask)
-
-        else:
-            loss = torch.mean(scaled)
-
-        return loss
+            scaled = torch.masked_select(scaled, torch.gt(weights, 0))
+        return scaled
 
     def forward(
             self,
@@ -48,16 +46,24 @@ class HardnessEnhancedLoss(torch.nn.Module):
             lsds_weights = lsds_weights * hardness_prediction
             affs_weights = affs_weights * hardness_prediction
 
-        lsd_loss = self._calc_loss(lsds_prediction, lsds_target, lsds_weights)
-        aff_loss = self._calc_loss(affs_prediction, affs_target, affs_weights)
+        lsd_loss = self._scaled_mse(lsds_prediction, lsds_target, lsds_weights)
+        aff_loss = self._scaled_mse(affs_prediction, affs_target, affs_weights)
 
         seg_loss = lsd_loss + aff_loss
-        # TODO: Cloning won't hurt for sure, but is it necessary here? (official implementation uses clone)
         seg_loss_copy_detached = seg_loss.clone().detach()
 
-        hardness_loss = - self.hardness_alpha * seg_loss_copy_detached
+        if self.hardness_loss_formula == 'original_hl':
+            # Mind the leading minus
+            hardness_loss = - self.hardness_alpha * hardness_prediction * seg_loss_copy_detached
+        elif self.hardness_loss_formula == 'mse':
+            # Leading + because we want to minimize the MSE expression
+            hardness_loss = + self.hardness_alpha * (hardness_prediction - seg_loss_copy_detached) ** 2
+        else:
+            raise ValueError(f'{self.hardness_loss_formula=} unkown.')
 
         total_loss = lsd_loss + aff_loss + hardness_loss
+        if self.enable_mean_reduction:
+            total_loss = torch.mean(total_loss)
 
         return total_loss
 
@@ -152,7 +158,8 @@ def get_funlib_unet(
         num_ds=2,
         constant_upsample = True,
         padding='valid',
-        enable_batch_norm=False
+        enable_batch_norm=False,
+        **kwargs
 ):
     """Construct a funlib U-Net model as used in the LSD paper. Defaults to the paper's architecture config."""
 
@@ -173,6 +180,7 @@ def get_funlib_unet(
         constant_upsample=constant_upsample,
         padding=padding,
         enable_batch_norm=enable_batch_norm,
+        **kwargs
     )
 
 
@@ -368,7 +376,7 @@ def _vmap_norm(x: torch.Tensor) -> torch.Tensor:
 def finalize_hardness(
         pre_hardness: torch.Tensor,
         hardness_c: float = 0.1,
-        enable_original_batch_sum: bool = False,
+        enable_original_batch_sum: bool = True,
 ) -> torch.Tensor:
     """
     Get normalized hardness map H from "pre-hardness" D https://arxiv.org/abs/2305.08462
