@@ -13,12 +13,17 @@ backbone:
   # ev_inp_shape: [96, 484, 484]
   ev_inp_shape: [84, 268, 268]
   init_kwargs:
-    enable_batch_norm: false
+    enable_batch_norm: true
     # num_fmaps_out: 14
     # num_fmaps: 14  # increased width
     num_heads: 2
     active_head_ids: [0, 1]  # segmentation head, hardness learning head
     detached_head_ids: [1, ]  # gradient detach hardness learning head
+
+
+finalize_hardness_kwargs:
+  hardness_c: 0.1
+  normalization_mode: sum_numel
 
 # hardness_head:
 #   model_class: nseg.shared.HardnessHead

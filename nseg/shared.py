@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 import torch
 from torch import nn
@@ -357,12 +358,6 @@ def get_decoder(decoder_variant, in_channels, out_channels):
         raise ValueError(f'Invalid choice {decoder_variant=}')
 
 
-@torch.vmap
-def _vmap_norm(x: torch.Tensor) -> torch.Tensor:
-    """Divides each batch element (along dim 0) by its individual sum across all non-batch dimensions."""
-    return x / torch.sum(x)
-
-
 # class HardnessHead(nn.Module):
 #     """Hardness head forward pass of https://arxiv.org/abs/2305.08462
 
@@ -405,11 +400,26 @@ def _vmap_norm(x: torch.Tensor) -> torch.Tensor:
 #         return out
 
 
+@torch.vmap
+def _vmap_sum_norm(x: torch.Tensor) -> torch.Tensor:
+    """Divides each batch element (along dim 0) by its individual sum across all non-batch dimensions."""
+    return x / torch.sum(x)
+
+
+@torch.vmap
+def _vmap_sum_numel_norm(x: torch.Tensor) -> torch.Tensor:
+    return x / (torch.sum(x) / x.numel())
+
+
+@torch.vmap
+def _vmap_sum_10k_norm(x: torch.Tensor) -> torch.Tensor:
+    return x / (torch.sum(x) / 10_000.)
+
+
 def finalize_hardness(
         pre_hardness: torch.Tensor,
         hardness_c: float = 0.1,
-        enable_original_batch_sum: bool = False,
-        enable_normalization: bool = False
+        normalization_mode = 'sum_numel',
 ) -> torch.Tensor:
     """
     Get normalized hardness map H from "pre-hardness" D https://arxiv.org/abs/2305.08462
@@ -420,22 +430,30 @@ def finalize_hardness(
     # Raw hardness level prediction (D)
     # Calculate numerator of H by applying sigmoid and adding constant c
     out = torch.sigmoid(pre_hardness) + hardness_c
-    if enable_normalization:
-        # Normalize to sum of 1
-        # TODO: Investigate if the official implementation is wrong here:
-        #  IMO we shouldn't divide by the sum of the full batch here but do the
-        #  sum-normalization for each batch element separately.
-        if enable_original_batch_sum:
+    match normalization_mode:
+        case 'none':
+            pass
+        case 'original_batchsum':
+            # Normalize to sum of 1
+            # TODO: Investigate if the official implementation is wrong here:
+            #  IMO we shouldn't divide by the sum of the full batch here but do the
+            #  sum-normalization for each batch element separately.
             out /= out.sum()  # Official implementation
-        else:
+        case 'batchsum':
             # Apply sum scaling per batch index
-            out = _vmap_norm(out)
+            out = _vmap_sum_norm(out)
+        case 'sum_numel':
+            out = _vmap_sum_numel_norm(out)
+        case 'sum_1M':
+            out = _vmap_sum_10k_norm(out)
     return out
 
 def build_mtlsdmodel(model_cfg):
     backbone_class = import_symbol(model_cfg.backbone.model_class)
     bb_init_kwargs = model_cfg.backbone.get('init_kwargs', {})
     backbone = backbone_class(**bb_init_kwargs)
+
+    finalize_hardness_kwargs = model_cfg.get('finalize_hardness_kw')
 
     # hardness_head_class = import_symbol(model_cfg.hardness_head.model_class)
     # hh_init_kwargs = model_cfg.hardness_head.get('init_kwargs', {})
@@ -458,7 +476,7 @@ def build_mtlsdmodel(model_cfg):
 
     # model = GeneralMtlsdModel(
     model = HardnessEnhancedMtlsdModel(
-        backbone=backbone, lsd_fc=lsd_fc, aff_fc=aff_fc, hardness_fc=hardness_fc
+        backbone=backbone, lsd_fc=lsd_fc, aff_fc=aff_fc, hardness_fc=hardness_fc, finalize_hardness_kwargs=finalize_hardness_kwargs
     )
     return model
 
@@ -473,6 +491,7 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
             lsd_fc: torch.nn.Module,
             aff_fc: torch.nn.Module,
             hardness_fc: torch.nn.Module,
+            finalize_hardness_kwargs: Optional[dict[str, str]] = None,
     ):
         super().__init__()
 
@@ -480,6 +499,7 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         self.lsd_fc = lsd_fc
         self.aff_fc = aff_fc
         self.hardness_fc = hardness_fc
+        self.finalize_hardness_kwargs = {} if finalize_hardness_kwargs is None else finalize_hardness_kwargs
         self.register_module('backbone', backbone)
         self.register_module('lsd_fc', lsd_fc)
         self.register_module('aff_fc', aff_fc)
@@ -495,7 +515,7 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         lsds = self.lsd_fc(z)
         affs = self.aff_fc(z)
         pre_hardness = self.hardness_fc(pre_hardness)
-        hardness = finalize_hardness(pre_hardness)
+        hardness = finalize_hardness(pre_hardness, **self.finalize_hardness_kwargs)
 
         return lsds, affs, hardness
 

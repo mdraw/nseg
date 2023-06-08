@@ -86,6 +86,13 @@ def get_run_time_str(start_time: float) -> str:
     return f'{h:d}:{m:02d}:{s:02d}'
 
 
+def get_mpl_imshow_fig(img):
+    fig, ax = plt.subplots()
+    aximg = ax.imshow(img)
+    fig.colorbar(aximg)
+    return fig
+
+
 def train(cfg: DictConfig) -> None:
     _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
@@ -399,7 +406,7 @@ def train(cfg: DictConfig) -> None:
                 pred_lsds3_img = wandb.Image(pred_lsds3_slice)
 
                 pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
-                pred_hardness_img = wandb.Image(pred_hardness_slice)
+                pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
 
                 wandb.log(
                     {
@@ -407,7 +414,7 @@ def train(cfg: DictConfig) -> None:
                         'training/images/gt_affs': gt_affs_img,
                         'training/images/pred_affs': pred_affs_img,
                         'training/images/pred_lsds3': pred_lsds3_img,
-                        'training/images/pred_hardness': pred_hardness_img,
+                        'training/images/pred_hardness': pred_hardness_fig,
                     },
                     step=batch.iteration,
                     commit=False

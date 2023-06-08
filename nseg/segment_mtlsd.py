@@ -17,7 +17,7 @@ from skimage.segmentation import watershed
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 
-from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss
+from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_predict import Predict
 from nseg.gp_sources import ZarrSource
 
@@ -163,12 +163,14 @@ def predict(cfg, raw_path, checkpoint_path=None):
     raw = gp.ArrayKey('RAW')
     pred_lsds = gp.ArrayKey('PRED_LSDS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     scan_request = gp.BatchRequest()
 
     scan_request.add(raw, input_size)
     scan_request.add(pred_lsds, output_size)
     scan_request.add(pred_affs, output_size)
+    scan_request.add(pred_hardness, output_size)
 
     # labels = gp.ArrayKey('LABELS')
     # scan_request.add(labels, output_size)
@@ -239,7 +241,8 @@ def predict(cfg, raw_path, checkpoint_path=None):
         },
         outputs={
             0: pred_lsds,
-            1: pred_affs
+            1: pred_affs,
+            2: pred_hardness
         }
     )
 
@@ -267,7 +270,7 @@ def predict(cfg, raw_path, checkpoint_path=None):
     # pred_lsds shape = b,c,d,h,w
     # pred_affs shape = b,c,d,h,w
 
-    pipeline += gp.Squeeze([raw, pred_lsds, pred_affs])
+    pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
 
     # raw shape = d,h,w
     # pred_lsds shape = c,d,h,w
@@ -279,13 +282,14 @@ def predict(cfg, raw_path, checkpoint_path=None):
     predict_request.add(raw, total_input_roi.get_end())
     predict_request.add(pred_lsds, total_output_roi.get_end())
     predict_request.add(pred_affs, total_output_roi.get_end())
+    predict_request.add(pred_hardness, total_output_roi.get_end())
 
     # predict_request.add(labels, total_output_roi.get_end())
 
     with gp.build(pipeline):
         batch = pipeline.request_batch(predict_request)
 
-    return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data  #, batch[labels].data
+    return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data, batch[pred_hardness].data  #, batch[labels].data
 
 
 def watershed_from_boundary_distance(
@@ -544,7 +548,7 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
-    raw, pred_lsds, pred_affs = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    raw, pred_lsds, pred_affs, pred_hardness = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
 
     data = zarr.open(str(raw_path), 'r')
     gt_seg = np.array(data[cfg.dataset.gt_name])  # type: ignore
@@ -568,9 +572,18 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
 
     cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
 
+
+    cropped_pred_hardness, _ = center_crop(pred_hardness, gt_seg)
+
+    # TODO: These weights are actually different during training - see gp.BalanceLabels
     lsds_weights = 1.
     affs_weights = 1.
 
+    # loss_class = import_symbol(cfg.loss.loss_class)
+    # loss_init_kwargs = cfg.loss.get('init_kwargs', {})
+    # loss_f = loss_class(**loss_init_kwargs)
+
+    # eval_loss = loss_f(
     eval_loss = WeightedMSELoss()(
         lsds_prediction=torch.as_tensor(cropped_pred_lsds),
         lsds_target=torch.as_tensor(gt_lsds),
@@ -578,6 +591,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         affs_prediction=torch.as_tensor(cropped_pred_affs),
         affs_target=torch.as_tensor(gt_affs),
         affs_weights=torch.as_tensor(affs_weights),
+        # hardness_prediction=torch.as_tensor(cropped_pred_hardness),
     ).item()
 
     logging.info(f'Eval loss: {eval_loss:.3f}')
@@ -637,6 +651,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
             cropped_pred_lsds=cropped_pred_lsds,
             cropped_pred_seg=cropped_pred_seg,
             cropped_pred_frag=cropped_pred_frag,
+            cropped_pred_hardness=cropped_pred_hardness,
             gt_seg=gt_seg,
             gt_affs=gt_affs,
             gt_lsds=gt_lsds,

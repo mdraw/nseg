@@ -48,7 +48,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg_hl
+    project: nseg_hl2
     name: ${shortname}
     tags:
       - mtlsd
@@ -64,13 +64,13 @@ loss:
   loss_class: nseg.shared.HardnessEnhancedLoss
   init_kwargs:
     enable_hardness_weighting: true
-    hardness_loss_formula: mse
+    hardness_loss_formula: original_hl
     hardness_alpha: 0.01
     enable_mean_reduction: true
 
 training:
   iterations: 400001
-  save_every: 2000
+  save_every: 1000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
 
@@ -88,11 +88,11 @@ training:
 
   ## Main hyperparams
 
-  batch_size: 1
-  lr: 0.5e-4
+  # batch_size: 1
+  # lr: 0.5e-4
 
-  # batch_size: 8
-  # lr: 5.0e-4
+  batch_size: 8
+  lr: 5.0e-4
 
   # batch_size: 16
   # lr: 1.0e-3
@@ -126,5 +126,7 @@ eval:
   write_groups:
     - raw0
     - gt_seg
-    - pred_frag
-    - pred_seg
+    - cropped_pred_frag
+    - cropped_pred_seg
+    - cropped_pred_hardness
+
