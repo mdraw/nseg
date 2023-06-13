@@ -477,7 +477,7 @@ class UNet(torch.nn.Module):
             fs_out = [None] * len(self.active_head_ids)
             for h in self.active_head_ids:
                 if h in self.detached_head_ids:
-                    f_left = f_left.detach()
+                    f_left = f_left.detach()  # TODO: Should we clone here in addition to detaching?
                 # up, concat, and crop
                 fs_right[h] = self.r_up[h][i](f_left, gs_out[h])
                 # convolve

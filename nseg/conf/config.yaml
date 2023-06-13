@@ -48,7 +48,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg_hl2
+    project: nseg_hl3
     name: ${shortname}
     tags:
       - mtlsd
@@ -64,9 +64,12 @@ loss:
   loss_class: nseg.shared.HardnessEnhancedLoss
   init_kwargs:
     enable_hardness_weighting: true
-    hardness_loss_formula: original_hl
-    hardness_alpha: 0.01
-    enable_mean_reduction: true
+    hardness_loss_formula: ohl
+    loss_term_weights:
+      aff: 1.0
+      lsd: 1.0
+      bce: 0.0
+      hardness: 0.01
 
 training:
   iterations: 400001
