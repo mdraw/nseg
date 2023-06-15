@@ -149,7 +149,9 @@ def center_crop(a, b):  # todo: from secgan
 # TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
 
 #TODO: Sync with train_mtlsd.py
-def predict(cfg, raw_path, checkpoint_path=None):
+def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> tuple[np.ndarray, ...]:
+    """Run scan inference on unlabeled data (or labeled data where labels should not be used).
+    Directly returns the outputs as numpy arrays."""
 
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
     # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
@@ -200,8 +202,6 @@ def predict(cfg, raw_path, checkpoint_path=None):
     #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
     #     source += gp.Pad(labels, labels_padding)
 
-    # source += gp.IntensityScaleShift(raw, 2, -1)  # Rescale to training range
-
     with gp.build(source):
         if cfg.eval.roi_shape is None:
             source_roi = source.spec[raw].roi
@@ -231,8 +231,6 @@ def predict(cfg, raw_path, checkpoint_path=None):
     if checkpoint_path is None:  # Fall back to cfg checkpoint
         checkpoint_path = cfg.eval.checkpoint
 
-    # TODO: Support .pts checkpoint model override
-
     # add a predict node
     predict = Predict(
         model=model,
@@ -252,30 +250,12 @@ def predict(cfg, raw_path, checkpoint_path=None):
 
     pipeline = source
     pipeline += gp.Normalize(raw)
-
-    # raw shape = d,h,w
-
     # pipeline += gp.Unsqueeze([raw])
-
-    # raw shape = c,d,h,w
-
     pipeline += gp.Stack(1)
-
-    # raw shape = b,c,d,h,w
 
     pipeline += predict
     pipeline += scan
-    # pipeline += gp.Squeeze([raw])
-
-    # raw shape = c,d,h,w
-    # pred_lsds shape = b,c,d,h,w
-    # pred_affs shape = b,c,d,h,w
-
     pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
-
-    # raw shape = d,h,w
-    # pred_lsds shape = c,d,h,w
-    # pred_affs shape = c,d,h,w
 
     predict_request = gp.BatchRequest()
 
@@ -549,7 +529,7 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
-    raw, pred_lsds, pred_affs, pred_hardness = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
     # batch = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
     # raw = batch['raw'].data  # TODO: Use ArrayKey
 
