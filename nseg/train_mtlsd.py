@@ -268,7 +268,7 @@ def train(cfg: DictConfig) -> None:
         dtype=np.float32
     )
 
-    # if cfg.dataset.enable_mask:
+    # TODO: Replace by global label balancing.
     pipeline += gp.BalanceLabels(
         gt_affs,
         affs_weights,

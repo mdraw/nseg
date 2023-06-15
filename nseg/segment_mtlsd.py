@@ -16,6 +16,8 @@ from scipy.ndimage import distance_transform_edt
 from skimage.segmentation import watershed
 
 from lsd.train.local_shape_descriptor import get_local_shape_descriptors
+from lsd.train.gp import AddLocalShapeDescriptor
+
 
 from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_predict import Predict
@@ -148,7 +150,7 @@ def center_crop(a, b):  # todo: from secgan
 
 # TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
 
-#TODO: Sync with train_mtlsd.py
+# TODO: Add option to use empty requests and directly write outputs to zarr, see https://funkelab.github.io/gunpowder/tutorial_simple_pipeline.html#predicting-on-a-whole-image
 def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> tuple[np.ndarray, ...]:
     """Run scan inference on unlabeled data (or labeled data where labels should not be used).
     Directly returns the outputs as numpy arrays."""
@@ -530,8 +532,14 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # batch = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # raw = batch['raw'].data  # TODO: Use ArrayKey
+
+    ## Uncomment when predict_labeled works
+    # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # raw = batch['raw']
+    # pred_lsds = batch['pred_lsds']
+    # pred_affs = batch['pred_affs']
+    # pred_hardness = batch['pred_hardness']
+
 
     data = zarr.open(str(raw_path), 'r')
     gt_seg = np.array(data[cfg.dataset.gt_name])  # type: ignore
@@ -655,6 +663,228 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     logging.info(f'VOI: {voi}')
 
     return eval_result
+
+
+# TODO: Fix remaining errors
+def predict_labeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> dict[str, np.ndarray]:
+    """Run scan inference on labeled data."""
+
+    voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
+    # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
+    input_shape = gp.Coordinate(
+        cfg.model.backbone.get('ev_inp_shape', cfg.model.backbone.inp_shape)
+    )
+    input_size = input_shape * voxel_size
+    offset = gp.Coordinate(cfg.model.backbone.offset)
+    output_shape = input_shape - offset
+    output_size = output_shape * voxel_size
+
+    raw = gp.ArrayKey('RAW')
+    labels = gp.ArrayKey('LABELS')
+    gt_lsds = gp.ArrayKey('GT_LSDS')
+    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
+    pred_lsds = gp.ArrayKey('PRED_LSDS')
+    gt_affs = gp.ArrayKey('GT_AFFS')
+    affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
+    pred_affs = gp.ArrayKey('PRED_AFFS')
+    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
+
+    labels_mask = gp.ArrayKey('GT_LABELS_MASK')
+    gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
+
+
+    # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
+    context = (input_size - output_size) / 2
+
+    source_data_dict = {
+        raw: cfg.dataset.raw_name,
+        labels: cfg.dataset.gt_name,
+        labels_mask: cfg.dataset.mask_name,
+    }
+    source_array_specs = {
+        raw: gp.ArraySpec(interpolatable=True),
+        labels: gp.ArraySpec(interpolatable=False),
+        labels_mask: gp.ArraySpec(interpolatable=False),
+    }
+
+    source = ZarrSource(
+        str(raw_path),
+        source_data_dict,
+        source_array_specs,
+    )
+
+    # if cfg.dataset.labels_padding is not None:
+    #     # We need more padding than for training, so multiply by constant factor
+    #     # TODO: Figure out how much padding is actually needed
+    #     # labels_padding = gp.Coordinate(cfg.dataset.labels_padding) * 5
+    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
+    #     # labels_padding = gp.Coordinate([8400, 7200, 7200])
+    #     source += gp.Pad(labels, labels_padding)
+    #     source += gp.Pad(labels_mask, labels_padding)
+
+    source += gp.GrowBoundary(
+        labels,
+        mask=labels_mask,
+        steps=1,
+        only_xy=True
+    )
+
+    source += AddLocalShapeDescriptor(
+        labels,
+        gt_lsds,
+        lsds_mask=lsds_weights,
+        **cfg.labels.lsd
+    )
+
+    neighborhood = cfg.labels.aff.nhood
+
+    source += gp.AddAffinities(
+        affinity_neighborhood=neighborhood,
+        labels=labels,
+        affinities=gt_affs,
+        labels_mask=labels_mask,
+        affinities_mask=gt_affs_mask,
+        dtype=np.float32
+    )
+
+    # TODO (IMPORTANT): Synchronize balance with training - here we rebalance based on _current_ batch stats.
+    # Currently there is no way to keep this in sync (not even among training batches), so results are not directly comparable!
+    source += gp.BalanceLabels(
+        gt_affs,
+        affs_weights,
+        gt_affs_mask,
+    )
+
+    source += gp.Unsqueeze([raw])
+
+    # if cfg.dataset.labels_padding is not None:
+    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
+    #     source += gp.Pad(labels, labels_padding)
+
+    with gp.build(source):
+        if cfg.eval.roi_shape is None:
+            # source_roi = source.spec[raw].roi
+            # total_input_roi = source_roi
+            # total_output_roi = source_roi.grow(-context, -context)
+            output_roi = source.spec[labels].roi
+            # output_roi = gp.Roi((100, 100, 100), (150, 150, 150)) * voxel_size
+            # output_roi = gp.Roi((100, 40, 40), output_shape) * voxel_size
+            source_roi = output_roi.grow(context, context)
+            total_input_roi = source_roi
+            total_output_roi = output_roi
+        else:
+            _off = voxel_size * 0  # ~0 is not intuitive but it works? The ROI shape is apparently auto-centered~. Edit: Apparently not...
+            # _off = voxel_size *
+            raise NotImplementedError
+            _sha = voxel_size * tuple(cfg.eval.roi_shape)
+            total_output_roi = gp.Roi(offset=_off, shape=_sha)
+            total_input_roi = total_output_roi.grow(context, context)
+            # total_input_roi = gp.Roi(offset=_off, shape=_sha)
+            # total_output_roi = total_input_roi.grow(-context, -context)
+
+        # _gtlabel_shape = voxel_size * (8, 8, 8)  # TODO!
+        # _gtlabel_off = voxel_size * (250, 250, 250)
+        # label_roi = gp.Roi(offset=_gtlabel_off, shape=_gtlabel_shape)
+
+
+    # model = get_mtlsdmodel()  # MtlsdModel()
+    model = build_mtlsdmodel(cfg.model)
+
+    # set model to eval mode
+    model.eval()
+
+    if checkpoint_path is None:  # Fall back to cfg checkpoint
+        checkpoint_path = cfg.eval.checkpoint
+
+    # add a predict node
+    predict = Predict(
+        model=model,
+        checkpoint=checkpoint_path,
+        inputs={
+            'input': raw
+        },
+        outputs={
+            0: pred_lsds,
+            1: pred_affs,
+            2: pred_hardness
+        }
+    )
+
+    scan_request = gp.BatchRequest()
+
+    scan_request.add(raw, input_size)
+    scan_request.add(labels, output_size)
+    scan_request.add(gt_lsds, output_size)
+    scan_request.add(lsds_weights, output_size)
+    scan_request.add(pred_lsds, output_size)
+    scan_request.add(gt_affs, output_size)
+    scan_request.add(affs_weights, output_size)
+    scan_request.add(pred_affs, output_size)
+    scan_request.add(pred_hardness, output_size)
+
+    # this will scan in chunks equal to the input/output sizes of the respective arrays
+    scan = gp.Scan(scan_request)
+
+    pipeline = source
+    pipeline += gp.Normalize(raw)
+    # pipeline += gp.Unsqueeze([raw])
+    pipeline += gp.Stack(1)
+
+    pipeline += predict
+    pipeline += scan
+    # pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
+
+    predict_request = gp.BatchRequest()
+
+    # predict_request.add(raw, total_input_roi.get_end())
+    # predict_request.add(pred_lsds, total_output_roi.get_end())
+    # predict_request.add(pred_affs, total_output_roi.get_end())
+    # predict_request.add(pred_hardness, total_output_roi.get_end())
+
+    # # Also add gt stuff for loss calculation
+    # predict_request.add(gt_lsds, total_output_roi.get_end())
+    # predict_request.add(lsds_weights, total_output_roi.get_end())
+    # predict_request.add(gt_affs, total_output_roi.get_end())
+    # predict_request.add(affs_weights, total_output_roi.get_end())
+
+
+    predict_request[raw] = total_input_roi
+    predict_request[pred_lsds] = total_output_roi
+    predict_request[pred_affs] = total_output_roi
+    predict_request[pred_hardness] = total_output_roi
+
+    # Also add gt stuff for loss calculation
+    predict_request[gt_lsds] = total_output_roi
+    predict_request[lsds_weights] = total_output_roi
+    predict_request[gt_affs] = total_output_roi
+    predict_request[affs_weights] = total_output_roi
+
+
+    with gp.build(pipeline):
+        batch = pipeline.request_batch(predict_request)
+
+    loss_class = import_symbol(cfg.loss.loss_class)
+    loss_init_kwargs = cfg.loss.get('init_kwargs', {})
+    loss_f = loss_class(**loss_init_kwargs)
+
+    # Expects matching shapes for outputs and targets - TODO: make sure they are cropped to the same shape
+    eval_loss = loss_f(
+        pred_lsds=torch.as_tensor(batch[pred_lsds].data),
+        gt_lsds=torch.as_tensor(batch[gt_lsds].data),
+        lsds_weights=torch.as_tensor(batch[lsds_weights].data),
+        pred_affs=torch.as_tensor(batch[pred_affs].data),
+        gt_affs=torch.as_tensor(batch[gt_affs].data),
+        affs_weights=torch.as_tensor(batch[affs_weights].data),
+        pred_hardness=torch.as_tensor(batch[pred_hardness].data),
+    ).item()
+
+    logging.info(f'Eval loss: {eval_loss:.3f}')
+
+    np_batch = {}
+    for gp_key, gp_array in batch.items():
+        np_batch[gp_key.identifier.lower()] = gp_array.data
+
+    return np_batch
 
 
 def _get_run_name_from_checkpoint_path(checkpoint_path):
