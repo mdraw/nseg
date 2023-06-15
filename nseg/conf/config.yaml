@@ -76,6 +76,7 @@ training:
   save_every: 1000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
+  first_eval_at_step: 1
 
   ## Performance options
 

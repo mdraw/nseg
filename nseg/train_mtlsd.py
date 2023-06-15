@@ -22,7 +22,7 @@ import wandb
 
 # from params import input_size, output_size, voxel_size
 from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
+from nseg.shared import compute_loss_maps, create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
 from nseg.conf import NConf, DictConfig, hydra
@@ -349,10 +349,13 @@ def train(cfg: DictConfig) -> None:
             # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
             end = request[labels].roi.get_end() / voxel_size
-            if (i + 1) % 10 or (i + 1) % save_every == 0:
+            # Determine if/how much we should log this iteration
+            _full_eval_now = (i + 1) % save_every == 0 or cfg.training.first_eval_at_step == i + 1
+            _loss_log_now = _full_eval_now or (i + 1) % 10
+            if _loss_log_now:
                 tb.add_scalar("loss", batch.loss, batch.iteration)
                 wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
-            if (i + 1) % save_every == 0:
+            if _full_eval_now:
                 logging.info(
                     f'Evaluating at step {batch.iteration}, '
                     f'run time {get_run_time_str(_training_start_time)}, '
@@ -411,15 +414,30 @@ def train(cfg: DictConfig) -> None:
                 pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
                 pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
 
+                tr_imgs_wandb = {
+                    'training/images/gt_seg_overlay': gt_seg_overlay_img,
+                    'training/images/gt_affs': gt_affs_img,
+                    'training/images/pred_affs': pred_affs_img,
+                    'training/images/gt_lsds3': gt_lsds3_img,
+                    'training/images/pred_lsds3': pred_lsds3_img,
+                    'training/images/pred_hardness': pred_hardness_fig,
+                }
+
+                loss_maps = compute_loss_maps(
+                    loss_module=loss,
+                    batch=batch,
+                    loss_inputs_gpkeys=trainer.loss_inputs,
+                    device=trainer.device
+                )
+                loss_maps = prefixkeys(loss_maps, 'training/images/loss_maps/')
+                loss_maps_z_figs = {
+                    k: get_mpl_imshow_fig(get_zslice(v[0]))
+                    for k, v in loss_maps.items()
+                }
+                tr_imgs_wandb.update(loss_maps_z_figs)
+
                 wandb.log(
-                    {
-                        'training/images/gt_seg_overlay': gt_seg_overlay_img,
-                        'training/images/gt_affs': gt_affs_img,
-                        'training/images/pred_affs': pred_affs_img,
-                        'training/images/gt_lsds3': gt_lsds3_img,
-                        'training/images/pred_lsds3': pred_lsds3_img,
-                        'training/images/pred_hardness': pred_hardness_fig,
-                    },
+                    tr_imgs_wandb,
                     step=batch.iteration,
                     commit=False
                 )
@@ -427,6 +445,9 @@ def train(cfg: DictConfig) -> None:
                 if len(val_files) > 0:
 
                     checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                    if not checkpoint_path.exists():
+                        # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
+                        trainer._save_model()
                     cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
                     rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}

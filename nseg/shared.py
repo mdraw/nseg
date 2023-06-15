@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch import nn
 import importlib
+import gunpowder as gp
 
 from elektronn3.models import unet as e3unet
 
@@ -18,16 +19,31 @@ from nseg import funlib_unet
 
 
 def as_torch_dict(
-        arr_dict: dict[Any, np.ndarray | torch.Tensor],
+        arr_dict: dict[str, np.ndarray | torch.Tensor],
         device: torch.device | str = 'cpu',
-        dtypes: Optional[dict[Any, torch.dtype]] = None,
-) -> dict[Any, torch.Tensor]:
+        dtypes: Optional[dict[str, torch.dtype]] = None,
+) -> dict[str, torch.Tensor]:
     dtypes = {} if dtypes is None else dtypes
     torch_dict = {
         k: torch.as_tensor(arr, device=device, dtype=dtypes.get(k))
         for k, arr in arr_dict.items()
     }
     return torch_dict
+
+
+def as_np_dict(
+        arr_dict: dict[str, torch.Tensor] | dict[str, np.ndarray],
+        dtypes: Optional[dict[str, np.dtype]] = None,
+) -> dict[str, np.ndarray]:
+    dtypes = {} if dtypes is None else dtypes
+    np_dict = {
+        k: v.detach().cpu().numpy().astype(dtypes.get(k))
+        if isinstance(v, torch.Tensor)
+        else np.asarray(v, dtype=dtypes.get(k))
+        for k, v in arr_dict.items()
+    }
+    return np_dict
+
 
 class HardnessEnhancedLoss(torch.nn.Module):
     """Calculate segmentation losses (aff, lsd, ...) and hardness losses
@@ -88,9 +104,9 @@ class HardnessEnhancedLoss(torch.nn.Module):
         return masked_loss
 
     def _compute_hardness_loss_map(
-            self, hardness_map_prediction: Optional[torch.Tensor], seg_loss_map: torch.Tensor
-    ) -> torch.Tensor | float:
-        if hardness_map_prediction is None:
+            self, pred_hardness: Optional[torch.Tensor], seg_loss_map: torch.Tensor
+    ) -> torch.Tensor:
+        if pred_hardness is None:
             return torch.zeros_like(seg_loss_map)
         # Detach from graph so the hardness gradient does not backpropagate to the
         #  backbone and the segmentation head (we don't want to risk encouraging the
@@ -99,12 +115,14 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
         if self.hardness_loss_formula == 'ohl':
             # Mind the leading minus
-            hardness_loss = - hardness_map_prediction * seg_loss_map_detached
+            hardness_loss = - pred_hardness * seg_loss_map_detached
         elif self.hardness_loss_formula == 'mse':
             # Leading + because we want to minimize the MSE expression
-            hardness_loss = + (hardness_map_prediction - seg_loss_map_detached) ** 2
+            hardness_loss = + (pred_hardness - seg_loss_map_detached) ** 2
         else:
             raise ValueError(f'{self.hardness_loss_formula=} unkown.')
+
+        hardness_loss *= self.loss_term_weights['hardness']
         return hardness_loss
 
     def _apply_hardness_weighting(
@@ -116,22 +134,22 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
     def compute_seg_loss_maps(
             self,
-            lsds_prediction: torch.Tensor,
-            lsds_target: torch.Tensor,
+            pred_lsds: torch.Tensor,
+            gt_lsds: torch.Tensor,
             lsds_weights: torch.Tensor,
-            affs_prediction: torch.Tensor,
-            affs_target: torch.Tensor,
+            pred_affs: torch.Tensor,
+            gt_affs: torch.Tensor,
             affs_weights: torch.Tensor,
-            hardness_prediction: Optional[torch.Tensor],
+            pred_hardness: Optional[torch.Tensor],
     ) -> dict[str, torch.Tensor]:
         seg_loss_maps = {}
         if self.loss_term_weights.get('lsd', 0) != 0:
-            lsd_loss_map = self._scaled_mse(lsds_prediction, lsds_target, lsds_weights)
-            lsd_loss_map = self._apply_hardness_weighting(lsd_loss_map, hardness_prediction)
+            lsd_loss_map = self._scaled_mse(pred_lsds, gt_lsds, lsds_weights)
+            lsd_loss_map = self._apply_hardness_weighting(lsd_loss_map, pred_hardness)
             seg_loss_maps['lsd'] = lsd_loss_map
         if self.loss_term_weights.get('aff', 0) != 0:
-            aff_loss_map = self._scaled_mse(affs_prediction, affs_target, affs_weights)
-            aff_loss_map = self._apply_hardness_weighting(aff_loss_map, hardness_prediction)
+            aff_loss_map = self._scaled_mse(pred_affs, gt_affs, affs_weights)
+            aff_loss_map = self._apply_hardness_weighting(aff_loss_map, pred_hardness)
             seg_loss_maps['aff'] = aff_loss_map
         if self.loss_term_weights.get('bce', 0) != 0:
             raise NotImplementedError
@@ -151,27 +169,27 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
     def forward(
             self,
-            lsds_prediction: torch.Tensor,
-            lsds_target: torch.Tensor,
+            pred_lsds: torch.Tensor,
+            gt_lsds: torch.Tensor,
             lsds_weights: torch.Tensor,
-            affs_prediction: torch.Tensor,
-            affs_target: torch.Tensor,
+            pred_affs: torch.Tensor,
+            gt_affs: torch.Tensor,
             affs_weights: torch.Tensor,
-            hardness_prediction: Optional[torch.Tensor],
+            pred_hardness: Optional[torch.Tensor],
     ) -> torch.Tensor:
         seg_loss_maps = self.compute_seg_loss_maps(
-            lsds_prediction,
-            lsds_target,
+            pred_lsds,
+            gt_lsds,
             lsds_weights,
-            affs_prediction,
-            affs_target,
+            pred_affs,
+            gt_affs,
             affs_weights,
-            hardness_prediction,
+            pred_hardness,
         )
-        seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps)
-        hardness_loss_map = self._compute_hardness_loss_map(hardness_prediction, seg_loss_map)
+        total_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps)
+        hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
 
-        total_loss_map = seg_loss_map + hardness_loss_map
+        total_loss_map = total_seg_loss_map + hardness_loss_map
         mask = self._compute_mask(lsds_weights, affs_weights)
         masked_total_loss = self._apply_mask(total_loss_map, mask)
 
@@ -211,6 +229,33 @@ class WeightedMSELoss(torch.nn.MSELoss):
         loss2 = self._calc_loss(affs_prediction, affs_target, affs_weights)
 
         return loss1 + loss2
+
+
+@torch.inference_mode()
+def compute_loss_maps(
+        loss_module: HardnessEnhancedLoss,
+        batch: gp.batch.Batch,
+        loss_inputs_gpkeys: dict[Any, gp.ArrayKey],
+        device: torch.device | str = 'cpu',
+) -> dict[str, np.ndarray]:
+    # loss_input_arraydict = loss_input_arraydict.values()
+    arr_keys = {akey.identifier.lower(): akey for akey in loss_inputs_gpkeys.values()}
+    arr_dict = {
+        name: batch[arr_key].data for name, arr_key in arr_keys.items()
+    }
+    loss_inputs = as_torch_dict(arr_dict=arr_dict, device=device)
+
+    seg_loss_maps = loss_module.compute_seg_loss_maps(
+        **loss_inputs
+    )
+    total_seg_loss_map = loss_module._combine_seg_loss_maps(seg_loss_maps)
+    pred_hardness = loss_inputs['pred_hardness']
+    hardness_loss_map = loss_module._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
+
+    loss_maps = {**seg_loss_maps, 'total_seg_loss': total_seg_loss_map, 'hardness': hardness_loss_map}
+    np_loss_maps = as_np_dict(loss_maps)
+
+    return np_loss_maps
 
 
 def create_lut(labels):
@@ -549,7 +594,7 @@ def build_mtlsdmodel(model_cfg):
 
     hardness_fc = nn.Sequential(
         nn.Conv3d(model_cfg.backbone.num_fmaps, 1, 1),
-        nn.Sigmoid()
+        # nn.Sigmoid()  # sigmoid is already applied in finalize_hardness afterwards!
     )
 
     # model = GeneralMtlsdModel(

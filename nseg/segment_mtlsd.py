@@ -148,6 +148,7 @@ def center_crop(a, b):  # todo: from secgan
 
 # TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
 
+#TODO: Sync with train_mtlsd.py
 def predict(cfg, raw_path, checkpoint_path=None):
 
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
@@ -549,6 +550,8 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     raw, pred_lsds, pred_affs, pred_hardness = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # batch = predict(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # raw = batch['raw'].data  # TODO: Use ArrayKey
 
     data = zarr.open(str(raw_path), 'r')
     gt_seg = np.array(data[cfg.dataset.gt_name])  # type: ignore
@@ -556,6 +559,8 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     ws_affs = pred_affs
 
     # Get GT affs and LSDs
+
+    # TODO: Don't do these computations here, use gunpowder nodes in predict() instead and let it fill the `batch`
 
     aff_nhood = cfg.labels.aff.nhood
     gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
