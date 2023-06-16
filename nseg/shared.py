@@ -553,22 +553,23 @@ def finalize_hardness(
     # Raw hardness level prediction (D)
     # Calculate numerator of H by applying sigmoid and adding constant c
     out = torch.sigmoid(pre_hardness) + hardness_c
-    match normalization_mode:
-        case 'none':
-            pass
-        case 'original_batchsum':
-            # Normalize to sum of 1
-            # The official implementation is apparently wrong here:
-            #  IMO we shouldn't divide by the sum of the full batch here but do the
-            #  sum-normalization for each batch element separately.
-            out /= out.sum()  # Official implementation
-        case 'batchsum':
-            # Apply sum scaling per batch index
-            out = _vmap_sum_norm(out)
-        case 'sum_numel':
-            out = _vmap_sum_numel_norm(out)
-        case 'sum_1M':
-            out = _vmap_sum_10k_norm(out)
+    print(normalization_mode)
+    if normalization_mode == 'none':
+        pass
+    elif normalization_mode == 'original_batchsum':
+        # Normalize to sum of 1
+        # The official implementation is apparently wrong here:
+        #  IMO we shouldn't divide by the sum of the full batch here but do the
+        #  sum-normalization for each batch element separately.
+        out /= out.sum()  # Official implementation
+    elif normalization_mode == 'batchsum':
+        # Apply sum scaling per batch index
+        out = _vmap_sum_norm(out)
+        print('batc')
+    elif normalization_mode == 'sum_numel':
+        out = _vmap_sum_numel_norm(out)
+    elif normalization_mode == 'sum_1M':
+        out = _vmap_sum_10k_norm(out)
     return out
 
 def build_mtlsdmodel(model_cfg):
@@ -576,7 +577,7 @@ def build_mtlsdmodel(model_cfg):
     bb_init_kwargs = model_cfg.backbone.get('init_kwargs', {})
     backbone = backbone_class(**bb_init_kwargs)
 
-    finalize_hardness_kwargs = model_cfg.get('finalize_hardness_kw')
+    finalize_hardness_kwargs = model_cfg.get('finalize_hardness_kwargs', {})
 
     # hardness_head_class = import_symbol(model_cfg.hardness_head.model_class)
     # hh_init_kwargs = model_cfg.hardness_head.get('init_kwargs', {})

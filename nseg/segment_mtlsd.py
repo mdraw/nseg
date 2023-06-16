@@ -148,6 +148,171 @@ def center_crop(a, b):  # todo: from secgan
     return a, b
 
 
+def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> None:
+    """Run scan inference on unlabeled data (or labeled data where labels should not be used).
+    Directly returns the outputs as numpy arrays."""
+
+    voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
+    # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
+    input_shape = gp.Coordinate(
+        cfg.model.backbone.get('ev_inp_shape', cfg.model.backbone.inp_shape)
+    )
+    input_size = input_shape * voxel_size
+    offset = gp.Coordinate(cfg.model.backbone.offset)
+    output_shape = input_shape - offset
+    output_size = output_shape * voxel_size
+
+    raw = gp.ArrayKey('RAW')
+    pred_lsds = gp.ArrayKey('PRED_LSDS')
+    pred_affs = gp.ArrayKey('PRED_AFFS')
+    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
+
+    scan_request = gp.BatchRequest()
+
+    scan_request.add(raw, input_size)
+    scan_request.add(pred_lsds, output_size)
+    scan_request.add(pred_affs, output_size)
+    scan_request.add(pred_hardness, output_size)
+
+    # labels = gp.ArrayKey('LABELS')
+    # scan_request.add(labels, output_size)
+
+    # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
+    context = (input_size - output_size) / 2
+
+    source_data_dict = {
+        raw: cfg.dataset.raw_name,
+        # labels: cfg.dataset.gt_name,
+    }
+    source_array_specs = {
+        raw: gp.ArraySpec(interpolatable=True),
+        # labels: gp.ArraySpec(interpolatable=False),
+    }
+
+    source = ZarrSource(
+        str(raw_path),
+        source_data_dict,
+        source_array_specs,
+    )
+
+    source += gp.Unsqueeze([raw])
+
+    # if cfg.dataset.labels_padding is not None:
+    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
+    #     source += gp.Pad(labels, labels_padding)
+
+    with gp.build(source):
+        if cfg.eval.roi_shape is None:
+            source_roi = source.spec[raw].roi
+            total_input_roi = source_roi
+            total_output_roi = source_roi.grow(-context, -context)
+        else:
+            _off = voxel_size * 0  # ~0 is not intuitive but it works? The ROI shape is apparently auto-centered~. Edit: Apparently not...
+            # _off = voxel_size *
+            raise NotImplementedError
+            _sha = voxel_size * tuple(cfg.eval.roi_shape)
+            total_output_roi = gp.Roi(offset=_off, shape=_sha)
+            total_input_roi = total_output_roi.grow(context, context)
+            # total_input_roi = gp.Roi(offset=_off, shape=_sha)
+            # total_output_roi = total_input_roi.grow(-context, -context)
+
+        # _gtlabel_shape = voxel_size * (8, 8, 8)  # TODO!
+        # _gtlabel_off = voxel_size * (250, 250, 250)
+        # label_roi = gp.Roi(offset=_gtlabel_off, shape=_gtlabel_shape)
+
+
+    # model = get_mtlsdmodel()  # MtlsdModel()
+    model = build_mtlsdmodel(cfg.model)
+
+    # set model to eval mode
+    model.eval()
+
+    if checkpoint_path is None:  # Fall back to cfg checkpoint
+        checkpoint_path = cfg.eval.checkpoint
+
+    # add a predict node
+    predict = Predict(
+        model=model,
+        checkpoint=checkpoint_path,
+        inputs={
+            'input': raw
+        },
+        outputs={
+            0: pred_lsds,
+            1: pred_affs,
+            2: pred_hardness
+        }
+    )
+
+    # this will scan in chunks equal to the input/output sizes of the respective arrays
+    scan = gp.Scan(scan_request)
+
+    pipeline = source
+    pipeline += gp.Normalize(raw)
+    # pipeline += gp.Unsqueeze([raw])
+    pipeline += gp.Stack(1)
+
+    pipeline += predict
+    pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
+
+
+    # Scale to uint8 range for zarr storage
+    pipeline += gp.IntensityScaleShift(pred_affs, 255, 0)
+    pipeline += gp.IntensityScaleShift(pred_lsds, 255, 0)
+
+    # Uncomment to make very small values visible
+    # pipeline += gp.IntensityScaleShift(pred_hardness, 10_000_000, 0)
+
+    gp_write_zarr = True
+    if gp_write_zarr:
+        out_file = str(Path(cfg.eval.result_zarr_root) / 'zres.zarr')
+        f = zarr.open(out_file, 'w')
+
+        out_datasets = {
+            'raw': {'out_dims': 1, 'out_dtype': 'uint8'},
+            'pred_affs': {'out_dims': 3, 'out_dtype': 'uint8'},
+            'pred_lsds': {'out_dims': 10, 'out_dtype': 'uint8'},
+            'pred_hardness': {'out_dims': 1, 'out_dtype': 'float32'},
+        }
+
+        for ds_name, data in out_datasets.items():
+            ds = f.create_dataset(
+                ds_name,
+                shape=[data['out_dims']] + list(total_output_roi.get_shape() / voxel_size),
+                dtype=data['out_dtype'],
+            )
+            ds.attrs['resolution'] = voxel_size
+            ds.attrs['offset'] = total_output_roi.get_offset()
+        zarr_write = gp.ZarrWrite(
+            output_dir=str(Path(cfg.eval.result_zarr_root)),
+            output_filename='zres.zarr',
+            dataset_names={
+                raw: 'raw',
+                pred_affs: 'pred_affs',
+                pred_lsds: 'pred_lsds',
+                pred_hardness: 'pred_hardness',
+            }
+        )
+        pipeline += zarr_write
+
+    pipeline += scan
+
+    # request an empty batch from scan
+    predict_request = gp.BatchRequest()
+
+    # # this lets us know to process the full image. we will scan over it until it is done
+    # predict_request.add(raw, total_input_roi.get_end())
+    # predict_request.add(pred_lsds, total_output_roi.get_end())
+    # predict_request.add(pred_affs, total_output_roi.get_end())
+    # predict_request.add(pred_hardness, total_output_roi.get_end())
+
+    # predict_request.add(labels, total_output_roi.get_end())
+
+    with gp.build(pipeline):
+        pipeline.request_batch(predict_request)
+
+
+
 # TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
 
 # TODO: Add option to use empty requests and directly write outputs to zarr, see https://funkelab.github.io/gunpowder/tutorial_simple_pipeline.html#predicting-on-a-whole-image
@@ -532,6 +697,7 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
 
     ## Uncomment when predict_labeled works
     # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
@@ -564,7 +730,6 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     )
 
     cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
-
 
     cropped_pred_hardness, _ = center_crop(pred_hardness, gt_seg)
 

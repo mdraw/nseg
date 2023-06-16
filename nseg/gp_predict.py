@@ -58,7 +58,7 @@ class Predict(GenericPredict):
             separate process. Default is false.
 
         float16: Whether to run ``predict`` in half precision (float16).
-            Default is ``True``.
+            Default is ``False``.
     """
 
     def __init__(
@@ -70,7 +70,7 @@ class Predict(GenericPredict):
         checkpoint: Optional[str] = None,
         device: str = 'cuda',
         spawn_subprocess: bool = False,
-        float16: bool = True
+        float16: bool = False
     ):
 
         self.array_specs = array_specs if array_specs is not None else {}

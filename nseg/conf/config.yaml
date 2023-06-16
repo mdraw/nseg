@@ -64,7 +64,7 @@ loss:
   loss_class: nseg.shared.HardnessEnhancedLoss
   init_kwargs:
     enable_hardness_weighting: true
-    hardness_loss_formula: ohl
+    hardness_loss_formula: mse
     loss_term_weights:
       aff: 1.0
       lsd: 1.0
@@ -110,7 +110,7 @@ eval:
   max_eval_cubes: 1  # Only do eval on first cube, skip others
   cube_root: ${dataset.val_root}
   # cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
-  checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_13800.pt
+  checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_14800.pth
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   fragment_threshold: 0.5
 
@@ -132,5 +132,5 @@ eval:
     - gt_seg
     - cropped_pred_frag
     - cropped_pred_seg
-    - cropped_pred_hardness
+    - cropped_pred_hardness0
 
