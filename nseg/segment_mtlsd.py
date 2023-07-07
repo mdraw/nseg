@@ -22,6 +22,8 @@ from lsd.train.gp import AddLocalShapeDescriptor
 from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_predict import Predict
 from nseg.gp_sources import ZarrSource
+from nseg.gp_scan import Scan
+from nseg.gp_boundaries import ArgMax
 
 from nseg.conf import NConf, DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
@@ -165,6 +167,7 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
     raw = gp.ArrayKey('RAW')
     pred_lsds = gp.ArrayKey('PRED_LSDS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+    pred_boundaries = gp.ArrayKey('PRED_BOUNDARIES')
     pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     scan_request = gp.BatchRequest()
@@ -172,6 +175,7 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
     scan_request.add(raw, input_size)
     scan_request.add(pred_lsds, output_size)
     scan_request.add(pred_affs, output_size)
+    scan_request.add(pred_boundaries, output_size)
     scan_request.add(pred_hardness, output_size)
 
     # labels = gp.ArrayKey('LABELS')
@@ -181,7 +185,8 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
     context = (input_size - output_size) / 2
 
     source_data_dict = {
-        raw: cfg.dataset.raw_name,
+        # raw: 'cfg.dataset.raw_name',
+        raw: 'volumes/raw',
         # labels: cfg.dataset.gt_name,
     }
     source_array_specs = {
@@ -189,6 +194,7 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
         # labels: gp.ArraySpec(interpolatable=False),
     }
 
+    print(raw_path)
     source = ZarrSource(
         str(raw_path),
         source_data_dict,
@@ -240,12 +246,16 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
         outputs={
             0: pred_lsds,
             1: pred_affs,
-            2: pred_hardness
+            2: pred_boundaries,
+            3: pred_hardness,
         }
     )
 
     # this will scan in chunks equal to the input/output sizes of the respective arrays
-    scan = gp.Scan(scan_request)
+    scan = Scan(
+        scan_request,
+        num_workers=0
+    )
 
     pipeline = source
     pipeline += gp.Normalize(raw)
@@ -253,25 +263,39 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
     pipeline += gp.Stack(1)
 
     pipeline += predict
-    pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
+
+    pipeline += ArgMax(pred_boundaries)
+
+    pipeline += gp.Squeeze([
+        raw,
+        pred_lsds,
+        pred_affs,
+        pred_boundaries,
+        # pred_hardness,
+    ])
 
 
     # Scale to uint8 range for zarr storage
     pipeline += gp.IntensityScaleShift(pred_affs, 255, 0)
     pipeline += gp.IntensityScaleShift(pred_lsds, 255, 0)
+    pipeline += gp.IntensityScaleShift(pred_boundaries, 255, 0)
 
     # Uncomment to make very small values visible
     # pipeline += gp.IntensityScaleShift(pred_hardness, 10_000_000, 0)
 
+    # from numcodecs import LZ4
+    # compressor = LZ4()
+
     gp_write_zarr = True
     if gp_write_zarr:
-        out_file = str(Path(cfg.eval.result_zarr_root) / 'zres.zarr')
+        out_file = str(Path(cfg.eval.result_zarr_root) / 'zres_nw0.zarr')
         f = zarr.open(out_file, 'w')
 
         out_datasets = {
             'raw': {'out_dims': 1, 'out_dtype': 'uint8'},
             'pred_affs': {'out_dims': 3, 'out_dtype': 'uint8'},
             'pred_lsds': {'out_dims': 10, 'out_dtype': 'uint8'},
+            'pred_boundaries': {'out_dims': 1, 'out_dtype': 'uint8'},
             'pred_hardness': {'out_dims': 1, 'out_dtype': 'float32'},
         }
 
@@ -280,6 +304,9 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
                 ds_name,
                 shape=[data['out_dims']] + list(total_output_roi.get_shape() / voxel_size),
                 dtype=data['out_dtype'],
+                chunks=(data['out_dims'], 256, 256, 256)
+                # chunks=output_size // 2,
+                # compressor=compressor,
             )
             ds.attrs['resolution'] = voxel_size
             ds.attrs['offset'] = total_output_roi.get_offset()
@@ -290,6 +317,7 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
                 raw: 'raw',
                 pred_affs: 'pred_affs',
                 pred_lsds: 'pred_lsds',
+                pred_boundaries: 'pred_boundaries',
                 pred_hardness: 'pred_hardness',
             }
         )
@@ -696,9 +724,10 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
-    raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-
+    # raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    raw_path = '/cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr'
+    predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    exit()
     ## Uncomment when predict_labeled works
     # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
     # raw = batch['raw']

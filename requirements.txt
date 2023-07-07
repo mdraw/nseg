@@ -28,14 +28,23 @@ randomname
 plotly
 zmesh
 
-lsds==0.1.3
+daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
 
-
-funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate@d2852b355910ee8081d0f6edc787c80cb94db909
-waterz @ git+https://github.com/funkey/waterz.git@a14f1a204fa6be6560fef3fcab917a3e3eac904f
+lsds @ git+https://github.com/funkelab/lsd.git@v0.1.3
+funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate.git@d2852b355910ee8081d0f6edc787c80cb94db909
+# TODO: Upstream waterz fix
+waterz @ git+https://github.com/mdraw/waterz.git@80d5f0dd21d84f236371f3dbee9a49fab616168c
 gunpowder @ git+https://github.com/mdraw/gunpowder.git@2702ef294bf40ff9aa687df48b95c66288710ab7
 elektronn3 @ git+https://github.com/ELEKTRONN/elektronn3.git@01e55c5e9d6baf7da9dbcf790d68deff1132a8db
 
 # For neuroglancer viewer:
-funlib.persistence @ git+https://github.com/funkelab/funlib.persistence@c88ac481b4e822557b3da0f56a6aa00c6efc7f65
+funlib.persistence @ git+https://github.com/funkelab/funlib.persistence.git@c88ac481b4e822557b3da0f56a6aa00c6efc7f65
 funlib.show.neuroglancer @ git+https://github.com/trivoldus28/funlib.show.neuroglancer.git@acd5a3ae0c93eac35ea47863761a8cc3179eb6ec
+
+
+
+# # For knossos dataset conversion to zarr (only needed once, so it's commented out)
+# knossos_utils @ git+https://github.com/knossos-project/knossos_utils.git@737c51ad4cc8dba82a7fbdb1e311c427aac540a8
+
+# # For cloudvolume dataset conversion to zarr (only needed once, so it's commented out)
+# cloud-volume

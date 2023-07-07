@@ -1,8 +1,10 @@
 # Tell hydra how to construct the config from sub confs by default
 defaults:
-  - model: funlib_unet
+  - model: hl_funlib_unet
   - dataset: j0126
   - data_prep: default
+  - knossos_raw_to_zarr: default
+  - cloudvolume_raw_to_zarr: default
   - _self_
 
 # Common path prefix
@@ -68,7 +70,7 @@ loss:
     loss_term_weights:
       aff: 1.0
       lsd: 1.0
-      bce: 0.0
+      bce: 0.5
       hardness: 0.01
 
 training:
@@ -81,8 +83,8 @@ training:
   ## Performance options
 
   # num_workers: auto
-  # num_workers: 0
-  num_workers: 32
+  num_workers: 0
+  # num_workers: 32
   # num_workers: 8
   enable_amp: true
   # enable_amp: false
@@ -110,7 +112,9 @@ eval:
   max_eval_cubes: 1  # Only do eval on first cube, skip others
   cube_root: ${dataset.val_root}
   # cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
-  checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_14800.pth
+  # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_14800.pth
+  # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-19_17-41_andante-story_andmask_mse_w0.5/model_checkpoint_7000.pt
+  checkpoint_path: /cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   fragment_threshold: 0.5
 

@@ -1,10 +1,13 @@
 # Based on https://github.com/funkelab/gunpowder/blob/48768d2f3165cb52d8614069450a81f0599477ee/gunpowder/torch/nodes/predict.py
 
 import copy
+import os
 from gunpowder.array import ArrayKey, Array
 from gunpowder.array_spec import ArraySpec
 from gunpowder.ext import torch
 from gunpowder.nodes.generic_predict import GenericPredict
+
+import torch
 
 import logging
 from typing import Dict, Optional, Union
@@ -70,7 +73,8 @@ class Predict(GenericPredict):
         checkpoint: Optional[str] = None,
         device: str = 'cuda',
         spawn_subprocess: bool = False,
-        float16: bool = False
+        float16: bool = False,
+        enable_cudnn_benchmark: bool = True,
     ):
 
         self.array_specs = array_specs if array_specs is not None else {}
@@ -86,6 +90,9 @@ class Predict(GenericPredict):
             outputs,
             array_specs,
             spawn_subprocess=spawn_subprocess)
+
+        if enable_cudnn_benchmark:
+            torch.backends.cudnn.benchmark = True
 
         self.device_string = device
         self.device = None  # to be set in start()
@@ -103,8 +110,18 @@ class Predict(GenericPredict):
         self.use_cuda = (
             torch.cuda.is_available() and
             self.device_string == "cuda")
-        logger.info(f"Predicting on {'gpu' if self.use_cuda else 'cpu'}")
-        self.device = torch.device("cuda" if self.use_cuda else "cpu")
+        if self.use_cuda:
+            gpu_id = 0
+            # Immoral hack for multi-gpu inference in two processes that can't communicate directly.
+            #  We expect that since the predictor workers are spawned immediately after each other, their pids will be off by one.
+            #  This is not guaranteed at all but if it doesn't work, we just have to rerun the script...
+            pid = os.getpid()
+            if torch.cuda.device_count() == 2 and pid % 2:
+                gpu_id = 1
+            self.device = torch.device('cuda', gpu_id)
+        else:
+            self.device = torch.device('cpu')
+        logger.info(f"Predicting on {self.device}")
 
         try:
             self.model = self.model.to(self.device)

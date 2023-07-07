@@ -62,17 +62,36 @@ class HardnessEnhancedLoss(torch.nn.Module):
         self.loss_term_weights = loss_term_weights
         if not self.loss_term_weights:
             raise ValueError('Non-empty loss_term_weights are required.')
+        # self.crossentropy = nn.CrossEntropyLoss(
+        #     reduction='none'
+        # )
+
 
     @staticmethod
     def _scaled_mse(pred: torch.Tensor, target: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         scaled = weights * (pred - target) ** 2
-        # Reduce channel dim 1 to its mean but keep singleton channel dim. N,C,D,H,W -> N,1,D,H,W
-        scaled_mean = torch.mean(scaled, 1).unsqueeze(1)
+        # # Reduce channel dim 1 to its mean but keep singleton channel dim. N,C,D,H,W -> N,1,D,H,W
+        # scaled_mean = torch.mean(scaled, 1, keepdim=True)
+        # # Reduce channel dim 1 to its mean. N,C,D,H,W -> N,D,H,W
+        scaled_mean = torch.mean(scaled, 1)
         return scaled_mean
 
     @staticmethod
+    def _compute_bce_map(pred_boundaries: torch.Tensor, gt_boundaries: torch.Tensor, bce_weights: Optional[torch.Tensor] = None) -> torch.Tensor:
+        bce_loss_map = torch.nn.functional.cross_entropy(
+            input=pred_boundaries,
+            target=gt_boundaries,
+            weight=bce_weights,
+            reduction='none',
+        )
+        # # Reduce channel dim 1 to its mean but keep singleton channel dim. N,C,D,H,W -> N,1,D,H,W
+        # bce_loss_map = torch.mean(bce_loss_map, dim=1, keepdim=True)
+        # bce_loss_map.unsqueeze_(1)
+        return bce_loss_map
+
+    @staticmethod
     @torch.no_grad()
-    def _compute_mask(*weights, mode='and') -> torch.Tensor:
+    def _compute_mask(*weights, mode='or') -> torch.Tensor:
         """Combine weights into a mask by sequential logical "and" or "or" of a all mask weight channels.
         Voxels that have a weight of <= 0 in any (`mode='or'`) / all (`mode='and'`) channels are masked out."""
         if mode == 'and':
@@ -121,7 +140,6 @@ class HardnessEnhancedLoss(torch.nn.Module):
             hardness_loss = + (pred_hardness - seg_loss_map_detached) ** 2
         else:
             raise ValueError(f'{self.hardness_loss_formula=} unkown.')
-
         hardness_loss *= self.loss_term_weights['hardness']
         return hardness_loss
 
@@ -129,7 +147,10 @@ class HardnessEnhancedLoss(torch.nn.Module):
             self, loss_map: torch.Tensor, hardness_prediction: Optional[torch.Tensor]
     ) -> torch.Tensor:
         if self.enable_hardness_weighting and hardness_prediction is not None:
+            # hardness_scaling = hardness_prediction.squeeze(1)
+            # print(hardness_prediction.shape, hardness_scaling.shape)
             loss_map = hardness_prediction * loss_map
+            # print(loss_map.shape)
         return loss_map
 
     def compute_seg_loss_maps(
@@ -141,6 +162,8 @@ class HardnessEnhancedLoss(torch.nn.Module):
             gt_affs: torch.Tensor,
             affs_weights: torch.Tensor,
             pred_hardness: Optional[torch.Tensor],
+            pred_boundaries: torch.Tensor,
+            gt_boundaries: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         seg_loss_maps = {}
         if self.loss_term_weights.get('lsd', 0) != 0:
@@ -152,11 +175,12 @@ class HardnessEnhancedLoss(torch.nn.Module):
             aff_loss_map = self._apply_hardness_weighting(aff_loss_map, pred_hardness)
             seg_loss_maps['aff'] = aff_loss_map
         if self.loss_term_weights.get('bce', 0) != 0:
-            raise NotImplementedError
-            bce_loss_map = self._compute_bce_map(bce_prediction, bce_target, bce_weights)
-            bce_loss_map = self._apply_hardness_weighting(bce_loss_map, hardness_prediction)
+            bce_loss_map = self._compute_bce_map(pred_boundaries, gt_boundaries)#, boundary_weights)
+            bce_loss_map = self._apply_hardness_weighting(bce_loss_map, pred_hardness)
             seg_loss_maps['bce'] = bce_loss_map
 
+        for k, v in seg_loss_maps.items():
+            print(f'{k}: {v.shape}')
         return seg_loss_maps
 
     def _combine_seg_loss_maps(self, seg_loss_maps: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -176,15 +200,19 @@ class HardnessEnhancedLoss(torch.nn.Module):
             gt_affs: torch.Tensor,
             affs_weights: torch.Tensor,
             pred_hardness: Optional[torch.Tensor],
+            pred_boundaries: torch.Tensor,
+            gt_boundaries: torch.Tensor,
     ) -> torch.Tensor:
         seg_loss_maps = self.compute_seg_loss_maps(
-            pred_lsds,
-            gt_lsds,
-            lsds_weights,
-            pred_affs,
-            gt_affs,
-            affs_weights,
-            pred_hardness,
+            pred_lsds=pred_lsds,
+            gt_lsds=gt_lsds,
+            lsds_weights=lsds_weights,
+            pred_affs=pred_affs,
+            gt_affs=gt_affs,
+            affs_weights=affs_weights,
+            pred_hardness=pred_hardness,
+            pred_boundaries=pred_boundaries,
+            gt_boundaries=gt_boundaries,
         )
         total_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps)
         hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
@@ -553,7 +581,6 @@ def finalize_hardness(
     # Raw hardness level prediction (D)
     # Calculate numerator of H by applying sigmoid and adding constant c
     out = torch.sigmoid(pre_hardness) + hardness_c
-    print(normalization_mode)
     if normalization_mode == 'none':
         pass
     elif normalization_mode == 'original_batchsum':
@@ -565,11 +592,14 @@ def finalize_hardness(
     elif normalization_mode == 'batchsum':
         # Apply sum scaling per batch index
         out = _vmap_sum_norm(out)
-        print('batc')
     elif normalization_mode == 'sum_numel':
         out = _vmap_sum_numel_norm(out)
     elif normalization_mode == 'sum_1M':
         out = _vmap_sum_10k_norm(out)
+
+    # Squeeze singleton channel dimension -> N, D, H, W
+    out.squeeze_(1)
+
     return out
 
 def build_mtlsdmodel(model_cfg):
@@ -598,15 +628,24 @@ def build_mtlsdmodel(model_cfg):
         # nn.Sigmoid()  # sigmoid is already applied in finalize_hardness afterwards!
     )
 
+    boundary_fc = nn.Sequential(
+        nn.Conv3d(model_cfg.backbone.num_fmaps, 2, 1),
+        # nn.Softmax()  # softmax is integrated in nn.CrossEntropyLoss
+    )
+
     # model = GeneralMtlsdModel(
     model = HardnessEnhancedMtlsdModel(
-        backbone=backbone, lsd_fc=lsd_fc, aff_fc=aff_fc, hardness_fc=hardness_fc, finalize_hardness_kwargs=finalize_hardness_kwargs
+        backbone=backbone,
+        lsd_fc=lsd_fc,
+        aff_fc=aff_fc,
+        boundary_fc=boundary_fc,
+        hardness_fc=hardness_fc,
+        finalize_hardness_kwargs=finalize_hardness_kwargs,
     )
     return model
 
 
 # TODO: Experiment with turning the lsd_head and aff_head into full proper decoder heads
-# TODO: Think of better naming of heads - distinguish between big heads (decoders) and small heads (single conv layers)
 class HardnessEnhancedMtlsdModel(torch.nn.Module):
 
     def __init__(
@@ -614,19 +653,22 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
             backbone: torch.nn.Module,
             lsd_fc: torch.nn.Module,
             aff_fc: torch.nn.Module,
+            boundary_fc: torch.nn.Module,
             hardness_fc: torch.nn.Module,
-            finalize_hardness_kwargs: Optional[dict[str, str]] = None,
+            finalize_hardness_kwargs: Optional[dict[str, Any]] = None,
     ):
         super().__init__()
 
         self.backbone = backbone
         self.lsd_fc = lsd_fc
         self.aff_fc = aff_fc
+        self.boundary_fc = boundary_fc
         self.hardness_fc = hardness_fc
         self.finalize_hardness_kwargs = {} if finalize_hardness_kwargs is None else finalize_hardness_kwargs
         self.register_module('backbone', backbone)
         self.register_module('lsd_fc', lsd_fc)
         self.register_module('aff_fc', aff_fc)
+        self.register_module('boundary_fc', boundary_fc)
         self.register_module('hardness_fc', hardness_fc)
 
     def forward(self, input):
@@ -638,10 +680,11 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         # pass output through fcs
         lsds = self.lsd_fc(z)
         affs = self.aff_fc(z)
+        boundaries = self.boundary_fc(z)
         pre_hardness = self.hardness_fc(pre_hardness)
         hardness = finalize_hardness(pre_hardness, **self.finalize_hardness_kwargs)
 
-        return lsds, affs, hardness
+        return lsds, affs, boundaries, hardness
 
 # class GeneralMtlsdModel(torch.nn.Module):
 

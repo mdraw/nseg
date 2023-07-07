@@ -25,6 +25,7 @@ from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per
 from nseg.shared import compute_loss_maps, create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
+from nseg.gp_boundaries import AddBoundaryLabels
 from nseg.conf import NConf, DictConfig, hydra
 
 
@@ -128,6 +129,9 @@ def train(cfg: DictConfig) -> None:
     gt_affs = gp.ArrayKey('GT_AFFS')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+    gt_boundaries = gp.ArrayKey('GT_BOUNDARIES')
+    pred_boundaries = gp.ArrayKey('PRED_BOUNDARIES')
+
     pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     if cfg.dataset.enable_mask:
@@ -170,6 +174,8 @@ def train(cfg: DictConfig) -> None:
     request.add(gt_affs, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
+    request.add(gt_boundaries, output_size)
+    request.add(pred_boundaries, output_size)
     request.add(pred_hardness, output_size)
 
     if cfg.dataset.enable_mask:
@@ -249,6 +255,12 @@ def train(cfg: DictConfig) -> None:
         only_xy=True
     )
 
+    pipeline += AddBoundaryLabels(
+        instance_labels=labels,
+        boundary_labels=gt_boundaries,
+        # dtype=np.int64,
+    )
+
     # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
     pipeline += AddLocalShapeDescriptor(
         labels,
@@ -298,7 +310,8 @@ def train(cfg: DictConfig) -> None:
         outputs={
             0: pred_lsds,
             1: pred_affs,
-            2: pred_hardness,
+            2: pred_boundaries,
+            3: pred_hardness,
         },
         loss_inputs={
             0: pred_lsds,
@@ -308,6 +321,8 @@ def train(cfg: DictConfig) -> None:
             4: gt_affs,
             5: affs_weights,
             6: pred_hardness,
+            7: pred_boundaries,
+            8: gt_boundaries,
         },
         # log_dir = "./logs/"
         save_every=save_every,  # todo: increase,
@@ -414,6 +429,13 @@ def train(cfg: DictConfig) -> None:
                 pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
                 pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
 
+                with torch.inference_mode():
+                    _th_pred_boundaries = torch.as_tensor(batch[pred_boundaries].data[0], dtype=torch.float32)
+                    _np_sm_pred_boundaries = torch.softmax(_th_pred_boundaries, dim=0).numpy().astype(np.float32)[1]
+                pred_boundaries_slice = get_zslice(_np_sm_pred_boundaries)
+                pred_boundaries_fig = get_mpl_imshow_fig(pred_boundaries_slice)
+                # pred_boundaries_fig = wandb.Image(pred_boundaries_slice)
+
                 tr_imgs_wandb = {
                     'training/images/gt_seg_overlay': gt_seg_overlay_img,
                     'training/images/gt_affs': gt_affs_img,
@@ -421,6 +443,7 @@ def train(cfg: DictConfig) -> None:
                     'training/images/gt_lsds3': gt_lsds3_img,
                     'training/images/pred_lsds3': pred_lsds3_img,
                     'training/images/pred_hardness': pred_hardness_fig,
+                    'training/images/pred_boundaries': pred_boundaries_fig,
                 }
 
                 loss_maps = compute_loss_maps(
@@ -430,6 +453,7 @@ def train(cfg: DictConfig) -> None:
                     device=trainer.device
                 )
                 loss_maps = prefixkeys(loss_maps, 'training/images/loss_maps/')
+
                 loss_maps_z_figs = {
                     k: get_mpl_imshow_fig(get_zslice(v[0]))
                     for k, v in loss_maps.items()
