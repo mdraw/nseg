@@ -30,7 +30,9 @@ zmesh
 
 ## daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
 ## ^ This is the revision in the singularity container but it has a bug in the mongodb graph access, so we use the first revision where this has been fixed:
-daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
+# daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
+# Actually, how about the recommended version from the bottom of the lsd README?:
+daisy @ git+https://github.com/funkelab/daisy.git@39723ca594dcc3a923c9804cf1f3648a77789cbe
 
 lsds @ git+https://github.com/funkelab/lsd.git@v0.1.3
 funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate.git@d2852b355910ee8081d0f6edc787c80cb94db909

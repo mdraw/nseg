@@ -917,10 +917,33 @@ def find_worst_split_merges(rand_voi_report):
 
 if __name__ == "__main__":
 
-    config_file = sys.argv[1]
+    # config_file = sys.argv[1]
 
-    with open(config_file, 'r') as f:
-        config = json.load(f)
+    # with open(config_file, 'r') as f:
+    #     config = json.load(f)
+
+    config = {
+        "experiment": "zebrafinch",
+        "setup": "setup02",
+        "iteration": 400000,
+        "config_slab": "mtlsd",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "fragments_dataset": "/volumes/fragments",
+        "edges_db_host": "cajalg001",
+        "edges_db_name": "zf_test6",
+        "edges_collection": "edges_hist_quant_75",
+        "scores_db_name": "scores",
+        "annotations_db_host": "cajalg001",
+        "annotations_db_name": "foo",
+        "annotations_skeletons_collection_name": "zebrafinch",
+        "node_components": "zebrafinch_components",
+        "node_mask": "zebrafinch_mask",
+        "roi_offset": [50800, 43200, 44100],
+        "roi_shape": [10800, 10800, 10800],
+        "thresholds_minmax": [0.5, 1],
+        "thresholds_step": 1,
+        "run_type": "11_micron_roi_masked"
+    }
 
     evaluate = EvaluateAnnotations(**config)
     evaluate.evaluate()
