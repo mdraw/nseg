@@ -186,10 +186,23 @@ def get_connected_components(
 
 if __name__ == "__main__":
 
-    config_file = sys.argv[1]
+    # config_file = sys.argv[1]
 
-    with open(config_file, 'r') as f:
-        config = json.load(f)
+    # with open(config_file, 'r') as f:
+    #     config = json.load(f)
+
+    config = {
+        "db_host": "cajalg001",
+        "db_name": "zf_test6",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "edges_collection": "edges_hist_quant_75",
+        "thresholds_minmax": [0, 1],
+        "thresholds_step": 0.02,
+        "block_size": [3600, 3600, 3600],
+        "num_workers": 5,
+        "fragments_dataset": "/volumes/fragments",
+        "run_type": "test"
+    }
 
     start = time.time()
     find_segments(**config)
