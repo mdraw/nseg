@@ -1,3 +1,4 @@
+import datetime
 import daisy
 import hashlib
 import json
@@ -163,8 +164,10 @@ def start_worker(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    log_out = os.path.join(output_dir, 'agglomerate_blockwise_%d.out' %worker_id)
-    log_err = os.path.join(output_dir, 'agglomerate_blockwise_%d.err' %worker_id)
+    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+    log_out = os.path.join(output_dir, f'{timestamp}_extract_fragments_blockwise_{worker_id}.out')
+    log_err = os.path.join(output_dir, f'{timestamp}_extract_fragments_blockwise_{worker_id}.err')
 
     config = {
             'affs_file': affs_file,
@@ -191,11 +194,18 @@ def start_worker(
 
     worker_command = os.path.join('.', worker)
 
+    pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
+
+    _pyb_log_out = os.path.join(output_dir, f'{timestamp}_log_{worker_id}')
+
     base_command = [
-        'bsub',
-        '-n', '1',
+        'srun',
+        '--ntasks=1',
+        '--time=1-0',
+        '--mem=500G',
+        '--cpus-per-task=32',
         '-o', f'{log_out}',
-        f'python {worker_command} {config_file} > {log_out}'
+        f'{pybin} {worker_command} {config_file} &> {_pyb_log_out}'
     ]
 
     logging.info(f'Base command: {base_command}')
@@ -210,10 +220,27 @@ def check_block(blocks_agglomerated, block):
 
 if __name__ == "__main__":
 
-    config_file = sys.argv[1]
+    # config_file = sys.argv[1]
 
-    with open(config_file, 'r') as f:
-        config = json.load(f)
+    # with open(config_file, 'r') as f:
+    #     config = json.load(f)
+
+    config = {
+        "experiment": "zebrafinch",
+        "setup": "setup02",
+        "iteration": 400000,
+        "affs_file": "/cajal/scratch/projects/misc/mdraw/data/aclsd-affs_roi/zfinch_11_micron_crop.zarr",
+        "affs_dataset": "/volumes/affs",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "fragments_dataset": "/volumes/fragments",
+        "block_size": [3600, 3600, 3600],
+        "context": [240, 243, 243],
+        "db_host": "cajalg001",
+        "db_name": "zf_test6",
+        "num_workers": 32,
+        "queue": "local",
+        "merge_function": "hist_quant_75"
+    }
 
     start = time.time()
 

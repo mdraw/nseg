@@ -1,10 +1,11 @@
 import daisy
 import json
 import logging
-import lsd
 import pymongo
 import sys
 import time
+
+from lsd.post.parallel_fragments import watershed_in_block
 
 logging.basicConfig(level=logging.INFO)
 
@@ -80,7 +81,7 @@ def extract_fragments_worker(input_config):
 
         start = time.time()
 
-        lsd.watershed_in_block(
+        watershed_in_block(
             affs,
             block,
             context,

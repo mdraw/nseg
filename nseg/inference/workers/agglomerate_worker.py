@@ -6,6 +6,8 @@ import pymongo
 import sys
 import time
 
+from lsd.post.parallel_aff_agglomerate import agglomerate_in_block
+
 logging.basicConfig(level=logging.INFO)
 
 def agglomerate_worker(input_config):
@@ -74,7 +76,7 @@ def agglomerate_worker(input_config):
 
         start = time.time()
 
-        lsd.agglomerate_in_block(
+        agglomerate_in_block(
                 affs,
                 fragments,
                 rag_provider,
