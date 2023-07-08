@@ -368,11 +368,13 @@ def predict_worker(
                 '--nv', singularity_image
             ]
 
+    pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
+
+    _pyb_log_out = os.path.join(output_dir, '_pyb_predict_blockwise_%d.out'%worker_id)
+
     command += [
-        '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python -u %s %s'%(
-            predict_script,
-            config_file
-        )]
+        f'{pybin} -u {predict_script} {config_file} &> {_pyb_log_out}'
+    ]
 
     logging.info(f'Worker command: {command}')
 
