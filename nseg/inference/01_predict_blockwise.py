@@ -341,8 +341,13 @@ def predict_worker(
 
     # pipe output
     config_file = os.path.join(output_dir, '%d.config'%config_hash)
-    log_out = os.path.join(output_dir, 'predict_blockwise_%d.out'%worker_id)
-    log_err = os.path.join(output_dir, 'predict_blockwise_%d.err'%worker_id)
+
+    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+    log_out = os.path.join(output_dir, f'{timestamp}_predict_blockwise_{worker_id}.out')
+    log_err = os.path.join(output_dir, f'{timestamp}_predict_blockwise_{worker_id}.err')
+    _pyb_log_out = os.path.join(output_dir, f'{timestamp}_log_{worker_id}')
+    _srun_log_out = os.path.join(output_dir, f'{timestamp}_srun_log_{worker_id}')
 
     with open(config_file, 'w') as f:
         json.dump(config, f)
@@ -358,7 +363,7 @@ def predict_worker(
         '--cpus-per-task=24',
         '--gres=gpu:1',
         '--partition', worker_config['queue'],
-        '-o', f'{log_out}',
+        '-o', f'{_srun_log_out}',
     ]
 
     if singularity_image is not None:
@@ -369,8 +374,6 @@ def predict_worker(
             ]
 
     pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
-
-    _pyb_log_out = os.path.join(output_dir, '_pyb_predict_blockwise_%d.out'%worker_id)
 
     command += [
         f'{pybin} -u {predict_script} {config_file} &> {_pyb_log_out}'
@@ -410,10 +413,10 @@ if __name__ == "__main__":
         # "raw_file": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/zebrafinch/limited_container.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "__dummy5_zebrafinch.zarr",
-        "num_workers": 0,
-        "db_host": "localhost",
-        "db_name": "zf_test",
+        "file_name": "_dummy6_zebrafinch.zarr",
+        "num_workers": 64,
+        "db_host": "cajalg001",
+        "db_name": "zf_test8",
         "queue": "p.share",
         "singularity_image": None,
         "auto_file": None,

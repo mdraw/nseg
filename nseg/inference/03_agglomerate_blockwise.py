@@ -166,8 +166,8 @@ def start_worker(
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
-    log_out = os.path.join(output_dir, f'{timestamp}_extract_fragments_blockwise_{worker_id}.out')
-    log_err = os.path.join(output_dir, f'{timestamp}_extract_fragments_blockwise_{worker_id}.err')
+    log_out = os.path.join(output_dir, f'{timestamp}_agglomerate_blockwise_{worker_id}.out')
+    log_err = os.path.join(output_dir, f'{timestamp}_agglomerate_blockwise_{worker_id}.err')
 
     config = {
             'affs_file': affs_file,
