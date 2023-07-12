@@ -156,6 +156,9 @@ def predict_blockwise(
 
     '''
 
+
+    initial_timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
     #get relevant dirs + files
 
     experiment_dir = os.path.join(base_dir, experiment)
@@ -197,12 +200,14 @@ def predict_blockwise(
     outputs = {
         'affs': {"out_dims": 3, "out_dtype": "uint8"},
         'lsds': {"out_dims": 10, "out_dtype": "uint8"},
+        'boundaries': {"out_dims": 1, "out_dtype": "uint8"},
+        'hardness': {"out_dims": 1, "out_dtype": "float32"},
     }
 
     # voxels
     input_shape = daisy.Coordinate([84, 268, 268])
-    output_shape = daisy.Coordinate([84, 268, 268])
-    # output_shape = daisy.Coordinate([44, 228, 228])
+    # output_shape = daisy.Coordinate([84, 268, 268])
+    output_shape = daisy.Coordinate([44, 228, 228])
 
     # nm
     voxel_size = daisy.Coordinate((20, 9, 9))
@@ -274,7 +279,8 @@ def predict_blockwise(
             db_host,
             db_name,
             queue,
-            singularity_image),
+            singularity_image,
+            initial_timestamp),
         check_function=lambda b: check_block(
             blocks_predicted,
             b),
@@ -299,11 +305,15 @@ def predict_worker(
         db_host,
         db_name,
         queue,
-        singularity_image):
+        singularity_image,
+        initial_timestamp):
+
+    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
     # get the relevant worker script to distribute
     setup_dir = os.path.join('..', experiment, '02_train', setup)
     predict_script = os.path.abspath(os.path.join(setup_dir, 'predict.py'))
+    # predict_script = os.path.abspath(os.path.join(setup_dir, 'dummy_predict.py'))
 
     if raw_file.endswith('.json'):
         with open(raw_file, 'r') as f:
@@ -336,13 +346,12 @@ def predict_worker(
     # get worker id
     worker_id = daisy.Context.from_env().worker_id
 
-    output_dir = os.path.join('.predict_blockwise', network_dir)
+    output_dir = os.path.join('.predict_blockwise', network_dir, initial_timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
     # pipe output
     config_file = os.path.join(output_dir, '%d.config'%config_hash)
 
-    timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
     log_out = os.path.join(output_dir, f'{timestamp}_predict_blockwise_{worker_id}.out')
     log_err = os.path.join(output_dir, f'{timestamp}_predict_blockwise_{worker_id}.err')
@@ -413,10 +422,10 @@ if __name__ == "__main__":
         # "raw_file": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/zebrafinch/limited_container.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "_dummy6_zebrafinch.zarr",
+        "file_name": "zebrafinch_crunchy1.zarr",
         "num_workers": 64,
         "db_host": "cajalg001",
-        "db_name": "zf_test8",
+        "db_name": "zf_crunchy1",
         "queue": "p.share",
         "singularity_image": None,
         "auto_file": None,
