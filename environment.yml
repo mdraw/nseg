@@ -18,6 +18,9 @@ dependencies:
 
   - mongodb  # may cause mamba dep conflict
   - pymongo=3.13
+  - mongo-tools
+
+  - graph-tool  # For funlib.evaluate split_graph() implementation
 
   - mahotas
   - zarr >=2.15
