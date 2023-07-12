@@ -312,8 +312,9 @@ def predict_worker(
 
     # get the relevant worker script to distribute
     setup_dir = os.path.join('..', experiment, '02_train', setup)
-    predict_script = os.path.abspath(os.path.join(setup_dir, 'predict.py'))
-    # predict_script = os.path.abspath(os.path.join(setup_dir, 'dummy_predict.py'))
+
+    worker = 'workers/predict_worker.py'
+    worker_command = os.path.join('.', worker)
 
     if raw_file.endswith('.json'):
         with open(raw_file, 'r') as f:
@@ -385,7 +386,7 @@ def predict_worker(
     pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
 
     command += [
-        f'{pybin} -u {predict_script} {config_file} &> {_pyb_log_out}'
+        f'{pybin} -u {worker_command} {config_file} &> {_pyb_log_out}'
     ]
 
     logging.info(f'Worker command: {command}')
