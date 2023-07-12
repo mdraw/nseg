@@ -16,11 +16,13 @@ dependencies:
   - pytorch-cuda >=11.7 # uncomment for GPU mode
 #  - cpuonly # uncomment for CPU mode
 
-  - mongodb  # may cause mamba dep conflict
+  # For database connection in blockwise inference / eval
   - pymongo=3.13
-  - mongo-tools
+  - graph-tool=2.57  # For funlib.evaluate split_graph() implementation
 
-  - graph-tool  # For funlib.evaluate split_graph() implementation
+  # Only needed on database host, can be installed in a different env in case of conflict
+  - mongodb=6.0  # may cause mamba dep conflict
+  - mongo-tools=100.7
 
   - mahotas
   - zarr >=2.15
