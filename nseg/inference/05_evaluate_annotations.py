@@ -934,7 +934,7 @@ if __name__ == "__main__":
         "edges_collection": "edges_hist_quant_75",
         "scores_db_name": "scores",
         "annotations_db_host": "cajalg001",
-        "annotations_db_name": "foo",
+        "annotations_db_name": "annotations",
         "annotations_skeletons_collection_name": "zebrafinch",
         "node_components": "zebrafinch_components",
         "node_mask": "zebrafinch_mask",
@@ -942,8 +942,45 @@ if __name__ == "__main__":
         "roi_shape": [10800, 10800, 10800],
         "thresholds_minmax": [0.5, 1],
         "thresholds_step": 1,
-        "run_type": "11_micron_roi_masked"
+        "run_type": "11_micron_roi_masked",
+        # "run_type": "test",
     }
 
     evaluate = EvaluateAnnotations(**config)
     evaluate.evaluate()
+
+
+
+
+"""
+
+zf anno collection names:
+
+nodes_zebrafinch_components_68_micron_roi_masked
+nodes_zebrafinch_mask_61_micron_roi_masked
+nodes_zebrafinch_mask_25_micron_roi_masked
+nodes_zebrafinch_components_benchmark_roi_masked
+nodes_zebrafinch_mask_18_micron_roi_masked
+nodes_zebrafinch_mask_47_micron_roi_masked
+zebrafinch.edges
+nodes_zebrafinch_components_18_micron_roi_masked
+nodes_zebrafinch_mask_54_micron_roi_masked
+nodes_zebrafinch_mask_40_micron_roi_masked
+nodes_zebrafinch_components_25_micron_roi_masked
+nodes_zebrafinch_mask_32_micron_roi_masked
+nodes_zebrafinch_components_40_micron_roi_masked
+nodes_zebrafinch_components_47_micron_roi_masked
+nodes_zebrafinch_components_11_micron_roi_masked
+nodes_zebrafinch_components_32_micron_roi_masked
+nodes_zebrafinch_components_54_micron_roi_masked
+nodes_zebrafinch_mask_68_micron_roi_masked
+nodes_zebrafinch_components_76_micron_roi_masked
+nodes_zebrafinch_components_61_micron_roi_masked
+nodes_zebrafinch_mask_11_micron_roi_masked
+zebrafinch.nodes
+nodes_zebrafinch_mask_benchmark_roi_masked
+nodes_zebrafinch_mask_76_micron_roi_masked
+
+
+"""
+
