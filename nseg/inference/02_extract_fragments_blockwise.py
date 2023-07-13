@@ -17,7 +17,6 @@ logging.basicConfig(level=logging.INFO)
 def extract_fragments(
         experiment,
         setup,
-        iteration,
         affs_file,
         affs_dataset,
         fragments_file,
@@ -59,10 +58,6 @@ def extract_fragments(
         setup (``string``):
 
             Name of the setup to predict (setup01, setup02, ...).
-
-        iteration (``int``):
-
-            Training iteration.
 
         affs_file (``string``):
 
@@ -148,7 +143,7 @@ def extract_fragments(
         affs_dataset = affs_dataset + '/s0'
         source = daisy.open_ds(affs_file, affs_dataset)
 
-    network_dir = os.path.join(experiment, setup, str(iteration))
+    network_dir = os.path.join(experiment, setup)
 
     client = pymongo.MongoClient(db_host)
     db = client[db_name]
@@ -309,14 +304,12 @@ if __name__ == "__main__":
     config = {
         "experiment": "zebrafinch",
         "setup": "setup02",
-        "iteration": 400000,
         "affs_file": "/cajal/scratch/projects/misc/mdraw/data/aclsd-affs_roi/zfinch_11_micron_crop.zarr",
         "affs_dataset": "/volumes/affs",
         "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
         "fragments_dataset": "/volumes/fragments",
         "block_size": [3600, 3600, 3600],
         "context": [240, 243, 243],
-        # "db_host": "130.183.192.64",
         "db_host": "cajalg001",
         "db_name": "zf_test6",
         "num_workers": 32,

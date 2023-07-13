@@ -14,7 +14,6 @@ logging.basicConfig(level=logging.INFO)
 def evaluate(
         experiment,
         setup,
-        iteration,
         gt_file,
         gt_dataset,
         fragments_file,
@@ -42,10 +41,6 @@ def evaluate(
         setup (``string``):
 
             Name of the setup to predict (setup01, setup02, ...).
-
-        iteration (``int``):
-
-            Training iteration.
 
         gt_file (``string``):
 
@@ -154,7 +149,6 @@ def evaluate(
         evaluate_threshold(
                 experiment,
                 setup,
-                iteration,
                 db_host,
                 scores_db_name,
                 edges_collection,
@@ -212,7 +206,6 @@ def get_segmentation(
 def evaluate_threshold(
         experiment,
         setup,
-        iteration,
         db_host,
         scores_db_name,
         edges_collection,
@@ -247,7 +240,6 @@ def evaluate_threshold(
         metrics['threshold'] = threshold
         metrics['experiment'] = experiment
         metrics['setup'] = setup
-        metrics['iteration'] = iteration
         metrics['merge_function'] = edges_collection.strip('edges_')
 
         if method is not None:

@@ -21,19 +21,6 @@ setup_dir = os.path.dirname(os.path.realpath(__file__))
 
 DUMMY = False
 
-# voxels
-input_shape = gp.Coordinate([84, 268, 268])
-if DUMMY:
-    output_shape = gp.Coordinate([84, 268, 268])
-else:
-    output_shape = gp.Coordinate([44, 228, 228])
-
-# nm
-voxel_size = gp.Coordinate((20, 9, 9))
-input_size = input_shape * voxel_size
-output_size = output_shape * voxel_size
-
-
 from torch import nn
 
 
@@ -75,29 +62,16 @@ def block_done_callback(db_host, db_name, worker_config, block, start, duration)
 
 
 def predict(
-    iteration,
+    model_path,
     raw_file,
     raw_dataset,
     out_file,
-    out_dataset,
     db_host,
     db_name,
     worker_config,
-    **kwargs
+    input_size,
+    output_size,
 ):
-    # raw_file = '/cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr'
-    # raw_dataset = "volumes/raw"
-    # out_file = "/cajal/scratch/projects/misc/mdraw/lsd-results/inference/test_prediction.zarr"
-
-    # out_datasets = {
-    #     'affs': {"out_dims": 3, "out_dtype": "uint8"},
-    #     'lsds': {"out_dims": 10, "out_dtype": "uint8"},
-    # }
-
-    # worker_config = {
-    #     'num_cache_workers': 2,
-    # }
-
     raw = gp.ArrayKey("RAW")
     lsds = gp.ArrayKey("LSDS")
     affs = gp.ArrayKey("AFFS")
@@ -127,15 +101,14 @@ def predict(
     pipeline += gp.Normalize(raw)
 
     # pipeline += gp.Stack(1)
-
-
     # pipeline += gp.IntensityScaleShift(raw, 2, -1)
 
-    if DUMMY:
+    if model_path.lower() == 'dummy':
         model = DummyModel().eval()
     else:
-        model = torch.load('/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt')
+        model = torch.load(model_path)
 
+    # TODO: Clear up model_path vs. checkpoint path use - support both? See segment_mtlsd.py
     checkpoint_path = None
 
     pipeline += Predict(
@@ -155,7 +128,6 @@ def predict(
 
     # TODO: Output channel 1 probmap instead?
     pipeline += ArgMax(boundaries)
-
 
     pipeline += gp.Squeeze([
         raw,
@@ -191,10 +163,6 @@ def predict(
     )
     pipeline += gp.PrintProfilingStats(every=10)
 
-    # _daisy_context = '130.183.192.64:43217:BlockwiseTask:1:4'
-    # os.environ['DAISY_CONTEXT'] = _daisy_context
-
-
     pipeline += gp.DaisyRequestBlocks(
         chunk_request,
         roi_map={
@@ -217,10 +185,7 @@ def predict(
 
 
 if __name__ == "__main__":
-    # logging.basicConfig(level=logging.INFO)
-    import uuid
-    log_fn = '/u/mdraw/lsd/tmp-out/pred-%s.log' % str(uuid.uuid4())
-    logging.basicConfig(filename=log_fn, level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
     logging.getLogger("gunpowder.nodes.hdf5like_write_base").setLevel(logging.DEBUG)
 
     config_file = sys.argv[1]

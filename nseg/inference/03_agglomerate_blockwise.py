@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO)
 def agglomerate(
         experiment,
         setup,
-        iteration,
         affs_file,
         affs_dataset,
         fragments_file,
@@ -45,10 +44,6 @@ def agglomerate(
         setup (``string``):
 
             Name of the setup to predict (setup01, setup02, ...).
-
-        iteration (``int``):
-
-            Training iteration.
 
         affs_file (``string``):
 
@@ -99,7 +94,7 @@ def agglomerate(
     logging.info(f"Reading affs from {affs_file}")
     affs = daisy.open_ds(affs_file, affs_dataset, mode='r')
 
-    network_dir = os.path.join(experiment, setup, str(iteration), merge_function)
+    network_dir = os.path.join(experiment, setup, merge_function)
 
     logging.info(f"Reading fragments from {fragments_file}")
     fragments = daisy.open_ds(fragments_file, fragments_dataset, mode='r')
@@ -228,7 +223,6 @@ if __name__ == "__main__":
     config = {
         "experiment": "zebrafinch",
         "setup": "setup02",
-        "iteration": 400000,
         "affs_file": "/cajal/scratch/projects/misc/mdraw/data/aclsd-affs_roi/zfinch_11_micron_crop.zarr",
         "affs_dataset": "/volumes/affs",
         "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",

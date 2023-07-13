@@ -23,7 +23,6 @@ class EvaluateAnnotations():
             self,
             experiment,
             setup,
-            iteration,
             fragments_file,
             fragments_dataset,
             edges_db_host,
@@ -58,10 +57,6 @@ class EvaluateAnnotations():
             setup (``string``):
 
                 Name of the setup to predict (setup01, setup02, ...).
-
-            iteration (``int``):
-
-                Training iteration.
 
             fragments_file (``string``):
 
@@ -156,7 +151,6 @@ class EvaluateAnnotations():
 
         self.experiment = experiment
         self.setup = setup
-        self.iteration = int(iteration)
         self.method = method
         self.fragments_file = fragments_file
         self.fragments_dataset = fragments_dataset
@@ -837,7 +831,6 @@ class EvaluateAnnotations():
         report['threshold'] = threshold
         report['experiment'] = self.experiment
         report['setup'] = self.setup
-        report['iteration'] = self.iteration
         report['network_configuration'] = self.edges_db_name
         report['merge_function'] = self.edges_collection.strip('edges_')
 
@@ -925,7 +918,6 @@ if __name__ == "__main__":
     config = {
         "experiment": "zebrafinch",
         "setup": "setup02",
-        "iteration": 400000,
         "config_slab": "mtlsd",
         "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
         "fragments_dataset": "/volumes/fragments",

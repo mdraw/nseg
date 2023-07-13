@@ -14,10 +14,9 @@ import time
 logging.basicConfig(level=logging.INFO)
 
 def predict_blockwise(
-        base_dir,
         experiment,
         setup,
-        iteration,
+        model_path,
         raw_file,
         raw_dataset,
         out_base,
@@ -26,57 +25,18 @@ def predict_blockwise(
         db_host,
         db_name,
         queue,
-        auto_file=None,
-        auto_dataset=None,
-        singularity_image=None):
+        outputs,
+        net_input_shape,
+        net_offset,
+        voxel_size,
+        pybin,
+):
 
     '''
 
     Run prediction in parallel blocks. Within blocks, predict in chunks.
 
-
-    Assumes a general directory structure:
-
-
-    base
-    ├── fib25 (experiment dir)
-    │   │
-    │   ├── 01_data (data dir)
-    │   │   └── training_data (i.e zarr/n5, etc)
-    │   │
-    │   └── 02_train (train/predict dir)
-    │       │
-    │       ├── setup01 (setup dir - e.g baseline affinities)
-    │       │   │
-    │       │   ├── config.json (specifies meta data for inference)
-    │       │   │
-    │       │   ├── mknet.py (creates network, jsons to be used)
-    │       │   │
-    │       │   ├── model_checkpoint (saved network checkpoint for inference)
-    │       │   │
-    │       │   ├── predict.py (worker inference file - logic to be distributed)
-    │       │   │
-    │       │   ├── train_net.json (specifies meta data for training)
-    │       │   │
-    │       │   └── train.py (network training script)
-    │       │
-    │       ├──    .
-    │       ├──    .
-    │       ├──    .
-    │       └── setup{n}
-    │
-    ├── hemi-brain
-    ├── zebrafinch
-    ├──     .
-    ├──     .
-    ├──     .
-    └── experiment{n}
-
     Args:
-
-        base_dir (``string``):
-
-            Path to base directory containing experiment sub directories.
 
         experiment (``string``):
 
@@ -85,10 +45,6 @@ def predict_blockwise(
         setup (``string``):
 
             Name of the setup to predict (setup01, setup02, ...).
-
-        iteration (``int``):
-
-            Training iteration to predict from.
 
         raw_file (``string``):
 
@@ -110,7 +66,7 @@ def predict_blockwise(
         out_base (``string``):
 
             Path to base directory where zarr/n5 should be stored. The out_file
-            will be built from this directory, setup, iteration, file name
+            will be built from this directory, setup, file name
 
             **Note:
 
@@ -140,39 +96,15 @@ def predict_blockwise(
 
             Name of gpu queue to run inference on (i.e gpu_rtx, gpu_tesla, etc)
 
-        auto_file (``string``, optional):
-
-            Path to zarr/n5 containing first pass predictions to use as input to
-            autocontext network (i.e aclsd / acrlsd). None if not needed
-
-        auto_dataset (``string``, optional):
-
-            Input dataset to use if running autocontext (e.g 'volumes/lsds').
-            None if not needed
-
-        singularity_image (``string``, optional):
-
-            Path to singularity image. None if not needed
-
     '''
-
 
     initial_timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
-    #get relevant dirs + files
-
-    experiment_dir = os.path.join(base_dir, experiment)
-    train_dir = os.path.join(experiment_dir, '02_train')
-    network_dir = os.path.join(experiment, setup, str(iteration))
+    network_dir = os.path.join(experiment, setup)
 
     raw_file = os.path.abspath(raw_file)
-    out_file = os.path.abspath(os.path.join(out_base, setup, str(iteration), file_name))
+    out_file = os.path.abspath(os.path.join(out_base, setup, file_name))
 
-    setup = os.path.abspath(os.path.join(train_dir, setup))
-
-    # from here on, all values are in world units (unless explicitly mentioned)
-
-    # get ROI of source
     try:
         source = daisy.open_ds(raw_file, raw_dataset)
     except:
@@ -183,36 +115,15 @@ def predict_blockwise(
     logging.info(f'Source roi: {source.roi}')
     logging.info(f'Source voxel size: {source.voxel_size}')
 
-    # # load config
-    # with open(os.path.join(setup, 'config.json')) as f:
-    #     net_config = json.load(f)
-
-    # outputs = net_config['outputs']
-
-    # # get chunk size and context for network (since unet has smaller output size
-    # # than input size
-    # net_input_size = daisy.Coordinate(net_config['input_shape'])*source.voxel_size
-    # net_output_size = daisy.Coordinate(net_config['output_shape'])*source.voxel_size
-
-
-    # TODO: CONFIG < ---
-
-    outputs = {
-        'affs': {"out_dims": 3, "out_dtype": "uint8"},
-        'lsds': {"out_dims": 10, "out_dtype": "uint8"},
-        'boundaries': {"out_dims": 1, "out_dtype": "uint8"},
-        'hardness': {"out_dims": 1, "out_dtype": "float32"},
-    }
-
     # voxels
-    input_shape = daisy.Coordinate([84, 268, 268])
-    # output_shape = daisy.Coordinate([84, 268, 268])
-    output_shape = daisy.Coordinate([44, 228, 228])
+    net_input_shape = daisy.Coordinate(net_input_shape)
+    net_offset = daisy.Coordinate(net_offset)
+    net_output_shape = net_input_shape - net_offset
 
     # nm
-    voxel_size = daisy.Coordinate((20, 9, 9))
-    net_input_size = input_shape * voxel_size
-    net_output_size = output_shape * voxel_size
+    voxel_size = daisy.Coordinate(voxel_size)
+    net_input_size = net_input_shape * voxel_size
+    net_output_size = net_output_shape * voxel_size
 
     context = (net_input_size - net_output_size)/2
 
@@ -227,8 +138,6 @@ def predict_blockwise(
     logging.info('Preparing output dataset...')
 
 
-    # TODO: --- CONFIG >
-
     # get output file(s) meta data from config.json, prepare dataset(s)
     for output_name, val in outputs.items():
         out_dims = val['out_dims']
@@ -236,14 +145,15 @@ def predict_blockwise(
         out_dataset = 'volumes/%s'%output_name
 
         ds = daisy.prepare_ds(
-            out_file,
-            out_dataset,
-            output_roi,
-            source.voxel_size,
-            out_dtype,
+            filename=out_file,
+            ds_name=out_dataset,
+            total_roi=output_roi,
+            voxel_size=source.voxel_size,
+            dtype=out_dtype,
             write_roi=block_write_roi,
             num_channels=out_dims,
-            compressor={'id': 'gzip', 'level':5})
+            compressor={'id': 'zstd', 'level': 5}
+        )
 
     logging.info('Starting block-wise processing...')
 
@@ -255,64 +165,58 @@ def predict_blockwise(
     if 'blocks_predicted' not in db.list_collection_names():
         blocks_predicted = db['blocks_predicted']
         blocks_predicted.create_index(
-            [('block_id', pymongo.ASCENDING)],
-            name='block_id')
+            keys=[('block_id', pymongo.ASCENDING)],
+            name='block_id'
+        )
     else:
         blocks_predicted = db['blocks_predicted']
 
     # process block-wise
     succeeded = daisy.run_blockwise(
-        input_roi,
-        block_read_roi,
-        block_write_roi,
+        total_roi=input_roi,
+        read_roi=block_read_roi,
+        write_roi=block_write_roi,
         process_function=lambda: predict_worker(
-            experiment,
-            setup,
-            network_dir,
-            iteration,
-            raw_file,
-            raw_dataset,
-            auto_file,
-            auto_dataset,
-            out_file,
-            out_dataset,
-            db_host,
-            db_name,
-            queue,
-            singularity_image,
-            initial_timestamp),
-        check_function=lambda b: check_block(
-            blocks_predicted,
-            b),
+            network_dir=network_dir,
+            model_path=model_path,
+            raw_file=raw_file,
+            raw_dataset=raw_dataset,
+            out_file=out_file,
+            db_host=db_host,
+            db_name=db_name,
+            queue=queue,
+            pybin=pybin,
+            net_input_size=net_input_size,
+            net_output_size=net_output_size,
+            initial_timestamp=initial_timestamp
+        ),
+        check_function=lambda b: check_block(blocks_predicted, b),
         num_workers=num_workers,
         read_write_conflict=False,
-        fit='overhang')
+        fit='overhang'
+    )
 
     if not succeeded:
         raise RuntimeError("Prediction failed for (at least) one block")
 
 def predict_worker(
-        experiment,
-        setup,
         network_dir,
-        iteration,
+        model_path,
         raw_file,
         raw_dataset,
-        auto_file,
-        auto_dataset,
         out_file,
-        out_dataset,
         db_host,
         db_name,
         queue,
-        singularity_image,
-        initial_timestamp):
+        pybin,
+        net_input_size,
+        net_output_size,
+        initial_timestamp,
+):
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
     # get the relevant worker script to distribute
-    setup_dir = os.path.join('..', experiment, '02_train', setup)
-
     worker = 'workers/predict_worker.py'
     worker_command = os.path.join('.', worker)
 
@@ -328,16 +232,15 @@ def predict_worker(
     }
 
     config = {
-        'iteration': iteration,
+        'model_path': model_path,
         'raw_file': raw_file,
         'raw_dataset': raw_dataset,
-        'auto_file': auto_file,
-        'auto_dataset': auto_dataset,
         'out_file': out_file,
-        'out_dataset': out_dataset,
         'db_host': db_host,
         'db_name': db_name,
-        'worker_config': worker_config
+        'worker_config': worker_config,
+        'input_size': net_input_size,
+        'output_size': net_output_size,
     }
 
     # get a unique hash for this configuration
@@ -376,15 +279,6 @@ def predict_worker(
         '-o', f'{_srun_log_out}',
     ]
 
-    if singularity_image is not None:
-        command += [
-                'singularity exec',
-                '-B', '/groups',
-                '--nv', singularity_image
-            ]
-
-    pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
-
     command += [
         f'{pybin} -u {worker_command} {config_file} &> {_pyb_log_out}'
     ]
@@ -396,11 +290,6 @@ def predict_worker(
 
     logging.info('Predict worker finished')
 
-    # if things went well, remove temporary files
-    # os.remove(config_file)
-    # os.remove(log_out)
-    # os.remove(log_err)
-
 def check_block(blocks_predicted, block):
 
     done = blocks_predicted.count({'block_id': block.block_id}) >= 1
@@ -409,28 +298,29 @@ def check_block(blocks_predicted, block):
 
 if __name__ == "__main__":
 
-    # config_file = sys.argv[1]
-
-    # with open(config_file, 'r') as f:
-    #     config = json.load(f)
-
     config = {
-        "base_dir": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/",
         "experiment": "zebrafinch",
         "setup": "setup01",
-        "iteration": 400000,
+        "model_path": "/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt",
         "raw_file": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/zebrafinch/container.json",
-        # "raw_file": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/zebrafinch/limited_container.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
         "file_name": "zebrafinch_crunchy1.zarr",
-        "num_workers": 64,
+        "num_workers": 100,
         "db_host": "cajalg001",
         "db_name": "zf_crunchy1",
         "queue": "p.share",
-        "singularity_image": None,
-        "auto_file": None,
-        "auto_dataset": None,
+        # "net_input_shape": [84, 268, 268],
+        "net_input_shape": [96, 484, 484],
+        "net_offset": [40, 40, 40],
+        "voxel_size": [20, 9, 9],
+        "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
+        "outputs": {
+            "affs": {"out_dims": 3, "out_dtype": "uint8"},
+            "lsds": {"out_dims": 10, "out_dtype": "uint8"},
+            "boundaries": {"out_dims": 1, "out_dtype": "uint8"},
+            "hardness": {"out_dims": 1, "out_dtype": "float32"},
+        },
     }
 
     start = time.time()
