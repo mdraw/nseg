@@ -29,8 +29,8 @@ plotly
 zmesh
 
 ## daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
-## ^ This is the revision in the singularity container but it has a bug in the mongodb graph access, use version from the bottom of the lsd README instead because it has a fix:
-daisy @ git+https://github.com/funkelab/daisy.git@39723ca594dcc3a923c9804cf1f3648a77789cbe
+## ^ This is the revision in the singularity container but it has a bug in the mongodb graph access, use first revision that fixes this (after recommended rev from README!):
+daisy @ git+https://github.com/funkelab/daisy.git@4a92a8a9755b6c29f11469f5a3e0bb71f1bf6ae8
 
 funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate.git@d2852b355910ee8081d0f6edc787c80cb94db909
 
