@@ -1,5 +1,6 @@
 # Based on https://github.com/funkelab/lsd/blob/b6aee2fd0c87bc70a52ea77e85f24cc48bc4f437/lsd/tutorial/scripts/01_predict_blockwise.py
 
+from pathlib import Path
 import daisy
 import datetime
 import hashlib
@@ -24,12 +25,12 @@ def predict_blockwise(
         num_workers,
         db_host,
         db_name,
-        queue,
         outputs,
         net_input_shape,
         net_offset,
         voxel_size,
         pybin,
+        slurm_options,
 ):
 
     '''
@@ -142,7 +143,8 @@ def predict_blockwise(
     for output_name, val in outputs.items():
         out_dims = val['out_dims']
         out_dtype = val['out_dtype']
-        out_dataset = 'volumes/%s'%output_name
+        out_dataset = f'volumes/{output_name}'
+        print(out_dataset)
 
         ds = daisy.prepare_ds(
             filename=out_file,
@@ -184,11 +186,11 @@ def predict_blockwise(
             out_file=out_file,
             db_host=db_host,
             db_name=db_name,
-            queue=queue,
             pybin=pybin,
             net_input_size=net_input_size,
             net_output_size=net_output_size,
-            initial_timestamp=initial_timestamp
+            initial_timestamp=initial_timestamp,
+            slurm_options=slurm_options,
         ),
         check_function=lambda b: check_block(blocks_predicted, b),
         num_workers=num_workers,
@@ -207,18 +209,17 @@ def predict_worker(
         out_file,
         db_host,
         db_name,
-        queue,
         pybin,
         net_input_size,
         net_output_size,
         initial_timestamp,
+        slurm_options,
 ):
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
     # get the relevant worker script to distribute
-    worker = 'workers/predict_worker.py'
-    worker_command = os.path.join('.', worker)
+    worker_script = Path(__file__).parent / 'workers' / 'predict_worker.py'
 
     if raw_file.endswith('.json'):
         with open(raw_file, 'r') as f:
@@ -226,7 +227,6 @@ def predict_worker(
             raw_file = spec['container']
 
     worker_config = {
-        'queue': queue,
         'num_cpus': 4,
         'num_cache_workers': 0
     }
@@ -270,17 +270,12 @@ def predict_worker(
     # create worker command
     command = [
         'srun',
-        '--ntasks=1',
-        '--time=1-0',
-        '--mem=100G',
-        '--cpus-per-task=24',
-        '--gres=gpu:1',
-        '--partition', worker_config['queue'],
+        *slurm_options,
         '-o', f'{_srun_log_out}',
     ]
 
     command += [
-        f'{pybin} -u {worker_command} {config_file} &> {_pyb_log_out}'
+        f'{pybin} -u {worker_script} {config_file} &> {_pyb_log_out}'
     ]
 
     logging.info(f'Worker command: {command}')
@@ -302,14 +297,13 @@ if __name__ == "__main__":
         "experiment": "zebrafinch",
         "setup": "setup01",
         "model_path": "/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt",
-        "raw_file": "/cajal/scratch/projects/misc/mdraw/lsd/experiments/zebrafinch/container.json",
+        "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_benchmark_roi.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "zebrafinch_crunchy1.zarr",
+        "file_name": "zebrafinch_crunchy2.zarr",
         "num_workers": 100,
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy1",
-        "queue": "p.share",
+        "db_name": "zf_crunchy2",
         # "net_input_shape": [84, 268, 268],
         "net_input_shape": [96, 484, 484],
         "net_offset": [40, 40, 40],
@@ -321,6 +315,14 @@ if __name__ == "__main__":
             "boundaries": {"out_dims": 1, "out_dtype": "uint8"},
             "hardness": {"out_dims": 1, "out_dtype": "float32"},
         },
+        "slurm_options": [
+            "--ntasks=1",
+            "--time=1-0",
+            "--mem=100G",
+            "--cpus-per-task=24",
+            "--gres=gpu:1",
+            "--job-name=ns01pr",
+        ],
     }
 
     start = time.time()

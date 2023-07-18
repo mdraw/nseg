@@ -24,7 +24,6 @@ def extract_fragments_worker(input_config):
     fragments_dataset = config['fragments_dataset']
     db_name = config['db_name']
     db_host = config['db_host']
-    queue = config['queue']
     context = config['context']
     num_voxels_in_block = config['num_voxels_in_block']
     fragments_in_xy=config['fragments_in_xy']
@@ -96,7 +95,6 @@ def extract_fragments_worker(input_config):
 
         document = {
             'num_cpus': 5,
-            'queue': queue,
             'block_id': block.block_id,
             'read_roi': (
                 block.read_roi.get_begin(),

@@ -27,13 +27,14 @@ def extract_fragments(
         db_name,
         num_workers,
         fragments_in_xy,
-        queue,
+        pybin,
+        slurm_options,
         epsilon_agglomerate=0,
         mask_file=None,
         mask_dataset=None,
         filter_fragments=0,
         replace_sections=None,
-        **kwargs):
+):
 
     '''
 
@@ -105,10 +106,6 @@ def extract_fragments(
 
             Whether to extract fragments for each xy-section separately.
 
-        queue (``string``):
-
-            Name of cpu queue to use (e.g local)
-
         epsilon_agglomerate (``float``, optional):
 
             Perform an initial waterz agglomeration on the extracted fragments
@@ -136,6 +133,8 @@ def extract_fragments(
     '''
 
     logging.info(f"Reading affs from {affs_file}")
+
+    initial_timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
 
     try:
         affs = daisy.open_ds(affs_file, affs_dataset)
@@ -182,22 +181,25 @@ def extract_fragments(
         read_roi=read_roi,
         write_roi=write_roi,
         process_function=lambda: start_worker(
-            affs_file,
-            affs_dataset,
-            fragments_file,
-            fragments_dataset,
-            db_host,
-            db_name,
-            context,
-            fragments_in_xy,
-            queue,
-            network_dir,
-            epsilon_agglomerate,
-            mask_file,
-            mask_dataset,
-            filter_fragments,
-            replace_sections,
-            num_voxels_in_block),
+            affs_file=affs_file,
+            affs_dataset=affs_dataset,
+            fragments_file=fragments_file,
+            fragments_dataset=fragments_dataset,
+            db_host=db_host,
+            db_name=db_name,
+            context=context,
+            fragments_in_xy=fragments_in_xy,
+            network_dir=network_dir,
+            epsilon_agglomerate=epsilon_agglomerate,
+            mask_file=mask_file,
+            mask_dataset=mask_dataset,
+            filter_fragments=filter_fragments,
+            replace_sections=replace_sections,
+            num_voxels_in_block=num_voxels_in_block,
+            initial_timestamp=initial_timestamp,
+            pybin=pybin,
+            slurm_options=slurm_options,
+        ),
         check_function=lambda b: check_block(
             blocks_extracted,
             b),
@@ -214,7 +216,6 @@ def start_worker(
         db_name,
         context,
         fragments_in_xy,
-        queue,
         network_dir,
         epsilon_agglomerate,
         mask_file,
@@ -222,13 +223,16 @@ def start_worker(
         filter_fragments,
         replace_sections,
         num_voxels_in_block,
-        **kwargs):
+        initial_timestamp,
+        pybin,
+        slurm_options,
+):
 
     worker_id = daisy.Context.from_env().worker_id
 
     logging.info(f"worker {worker_id} started...")
 
-    output_dir = os.path.join('.extract_fragments_blockwise', network_dir)
+    output_dir = os.path.join('.extract_fragments_blockwise', network_dir, initial_timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
@@ -245,7 +249,6 @@ def start_worker(
             'db_name': db_name,
             'context': context,
             'fragments_in_xy': fragments_in_xy,
-            'queue': queue,
             'epsilon_agglomerate': epsilon_agglomerate,
             'mask_file': mask_file,
             'mask_dataset': mask_dataset,
@@ -268,18 +271,11 @@ def start_worker(
 
     worker_command = os.path.join('.', worker)
 
-    # worker_command = '/cajal/u/mdraw/nseg/nseg/inference/workers/extract_fragments_worker.py'
-
-    pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
-
     _pyb_log_out = os.path.join(output_dir, f'{timestamp}_log_{worker_id}')
 
     base_command = [
         'srun',
-        '--ntasks=1',
-        '--time=1-0',
-        '--mem=500G',
-        '--cpus-per-task=32',
+        *slurm_options,
         '-o', f'{log_out}',
         f'{pybin} {worker_command} {config_file} &> {_pyb_log_out}'
     ]
@@ -303,22 +299,29 @@ if __name__ == "__main__":
 
     config = {
         "experiment": "zebrafinch",
-        "setup": "setup02",
-        "affs_file": "/cajal/scratch/projects/misc/mdraw/data/aclsd-affs_roi/zfinch_11_micron_crop.zarr",
+        "setup": "setup01",
+        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2.zarr",
         "affs_dataset": "/volumes/affs",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "block_size": [3600, 3600, 3600],
         "context": [240, 243, 243],
         "db_host": "cajalg001",
-        "db_name": "zf_test6",
-        "num_workers": 32,
+        "db_name": "zf_crunchy2",
+        "num_workers": 100,
         "fragments_in_xy": True,
         "epsilon_agglomerate": 0.1,
         "mask_file": "/cajal/scratch/projects/misc/mdraw/data/funke/zebrafinch/testing/ground_truth/data.zarr",
         "mask_dataset": "volumes/neuropil_mask",
-        "queue": "normal",
-        "filter_fragments": 0.05
+        "filter_fragments": 0.05,
+        "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
+        "slurm_options": [
+            "--ntasks=1",
+            "--time=1-0",
+            "--mem=200G",
+            "--cpus-per-task=24",
+            "--job-name=ns02ex",
+        ],
     }
 
     start = time.time()

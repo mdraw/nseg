@@ -29,8 +29,11 @@ plotly
 zmesh
 
 ## daisy @ git+https://github.com/funkelab/daisy.git@5d0e6c9abbab6a86990d58b3e00ac4332a8ced46
-## ^ This is the revision in the singularity container but it has a bug in the mongodb graph access, use first revision that fixes this (after recommended rev from README!):
-daisy @ git+https://github.com/funkelab/daisy.git@4a92a8a9755b6c29f11469f5a3e0bb71f1bf6ae8
+## ^ This is the revision in the singularity container but it has a bug in the mongodb graph access ("too old")
+## daisy @ git+https://github.com/funkelab/daisy.git@1dd40ecb7f0ed75ff6ad4abe7e75f41ceda2d782
+## ^ has removed separate node_attribute_collections support in MongoDBGraphProvider ("too new")
+# So to get everything to work with one daisy version, use my fork that has the fix for the mongodb graph access while retaining node_attribute_collections support:
+daisy @ git+https://github.com/mdraw/daisy.git@3e77076329758de8e6f480e88cb8a9e4eba22ef9
 
 funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate.git@d2852b355910ee8081d0f6edc787c80cb94db909
 

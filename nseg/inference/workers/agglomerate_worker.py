@@ -25,7 +25,6 @@ def agglomerate_worker(input_config):
     fragments_dataset = config['fragments_dataset']
     db_host = config['db_host']
     db_name = config['db_name']
-    queue = config['queue']
     merge_function = config['merge_function']
 
     waterz_merge_function = {
@@ -86,7 +85,6 @@ def agglomerate_worker(input_config):
 
         document = {
             'num_cpus': 5,
-            'queue': queue,
             'block_id': block.block_id,
             'read_roi': (block.read_roi.get_begin(), block.read_roi.get_shape()),
             'write_roi': (block.write_roi.get_begin(), block.write_roi.get_shape()),

@@ -193,15 +193,16 @@ if __name__ == "__main__":
 
     config = {
         "db_host": "cajalg001",
-        "db_name": "zf_test6",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "db_name": "zf_crunchy1h",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
         "edges_collection": "edges_hist_quant_75",
         "thresholds_minmax": [0, 1],
-        "thresholds_step": 0.02,
+        # "thresholds_step": 0.02,
+        "thresholds_step": 0.2,
         "block_size": [3600, 3600, 3600],
-        "num_workers": 5,
+        "num_workers": 32,
         "fragments_dataset": "/volumes/fragments",
-        "run_type": "test"
+        "run_type": "benchmark_roi"
     }
 
     start = time.time()

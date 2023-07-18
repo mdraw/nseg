@@ -14,7 +14,7 @@ import torch
 import gunpowder as gp
 
 from nseg.gp_predict import Predict
-from nseg.gp_boundaries import ArgMax
+from nseg.gp_boundaries import ArgMax, SoftMax, Take
 
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -125,9 +125,10 @@ def predict(
         }
     )
 
+    # pipeline += ArgMax(boundaries)
 
-    # TODO: Output channel 1 probmap instead?
-    pipeline += ArgMax(boundaries)
+    pipeline += SoftMax(boundaries)
+    pipeline += Take(boundaries, 1, 1)  # Take channel 1
 
     pipeline += gp.Squeeze([
         raw,
@@ -141,7 +142,7 @@ def predict(
         raw,
     #     lsds,
     #     affs,
-        boundaries,
+    #     boundaries,
     #     hardness,
     ])
 
@@ -149,6 +150,7 @@ def predict(
     pipeline += gp.IntensityScaleShift(affs, 255, 0)
     pipeline += gp.IntensityScaleShift(lsds, 255, 0)
     pipeline += gp.IntensityScaleShift(boundaries, 255, 0)
+    pipeline += gp.IntensityScaleShift(hardness, 0.5, 0)  # This should keep values between 0 and 1
 
 
     pipeline += gp.ZarrWrite(

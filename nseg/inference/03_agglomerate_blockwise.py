@@ -24,9 +24,10 @@ def agglomerate(
         db_host,
         db_name,
         num_workers,
-        queue,
         merge_function,
-        **kwargs):
+        pybin,
+        slurm_options,
+):
 
     '''
 
@@ -91,6 +92,9 @@ def agglomerate(
 
     '''
 
+    initial_timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
+
+
     logging.info(f"Reading affs from {affs_file}")
     affs = daisy.open_ds(affs_file, affs_dataset, mode='r')
 
@@ -123,21 +127,26 @@ def agglomerate(
         read_roi,
         write_roi,
         process_function=lambda: start_worker(
-            affs_file,
-            affs_dataset,
-            fragments_file,
-            fragments_dataset,
-            db_host,
-            db_name,
-            queue,
-            merge_function,
-            network_dir),
+            affs_file=affs_file,
+            affs_dataset=affs_dataset,
+            fragments_file=fragments_file,
+            fragments_dataset=fragments_dataset,
+            db_host=db_host,
+            db_name=db_name,
+            merge_function=merge_function,
+            network_dir=network_dir,
+            initial_timestamp=initial_timestamp,
+            pybin=pybin,
+            slurm_options=slurm_options,
+        ),
         check_function=lambda b: check_block(
             blocks_agglomerated,
-            b),
+            b
+        ),
         num_workers=num_workers,
         read_write_conflict=False,
-        fit='shrink')
+        fit='shrink'
+    )
 
 def start_worker(
         affs_file,
@@ -146,16 +155,18 @@ def start_worker(
         fragments_dataset,
         db_host,
         db_name,
-        queue,
         merge_function,
         network_dir,
-        **kwargs):
+        initial_timestamp,
+        pybin,
+        slurm_options,
+):
 
     worker_id = daisy.Context.from_env().worker_id
 
     logging.info(f"worker {worker_id} started...")
 
-    output_dir = os.path.join('.agglomerate_blockwise', network_dir)
+    output_dir = os.path.join('.agglomerate_blockwise', network_dir, initial_timestamp)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -171,7 +182,6 @@ def start_worker(
             'fragments_dataset': fragments_dataset,
             'db_host': db_host,
             'db_name': db_name,
-            'queue': queue,
             'merge_function': merge_function
         }
 
@@ -189,16 +199,13 @@ def start_worker(
 
     worker_command = os.path.join('.', worker)
 
-    pybin = '/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python'
-
     _pyb_log_out = os.path.join(output_dir, f'{timestamp}_log_{worker_id}')
+
+
 
     base_command = [
         'srun',
-        '--ntasks=1',
-        '--time=1-0',
-        '--mem=500G',
-        '--cpus-per-task=32',
+        *slurm_options,
         '-o', f'{log_out}',
         f'{pybin} {worker_command} {config_file} &> {_pyb_log_out}'
     ]
@@ -215,25 +222,27 @@ def check_block(blocks_agglomerated, block):
 
 if __name__ == "__main__":
 
-    # config_file = sys.argv[1]
-
-    # with open(config_file, 'r') as f:
-    #     config = json.load(f)
-
     config = {
         "experiment": "zebrafinch",
-        "setup": "setup02",
-        "affs_file": "/cajal/scratch/projects/misc/mdraw/data/aclsd-affs_roi/zfinch_11_micron_crop.zarr",
+        "setup": "setup01",
+        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2.zarr",
         "affs_dataset": "/volumes/affs",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "block_size": [3600, 3600, 3600],
         "context": [240, 243, 243],
         "db_host": "cajalg001",
-        "db_name": "zf_test6",
-        "num_workers": 32,
-        "queue": "local",
-        "merge_function": "hist_quant_75"
+        "db_name": "zf_crunchy1h",
+        "num_workers": 64,
+        "merge_function": "hist_quant_75",
+        "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
+        "slurm_options": [
+            "--ntasks=1",
+            "--time=1-0",
+            "--mem=400G",
+            "--cpus-per-task=24",
+            "--job-name=ns03ag",
+        ],
     }
 
     start = time.time()

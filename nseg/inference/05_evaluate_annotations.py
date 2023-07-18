@@ -43,6 +43,7 @@ class EvaluateAnnotations():
             annotations_db_host=None,
             annotations_synapses_collection_name=None,
             compute_mincut_metric=False,
+            num_workers=4,
             **kwargs):
 
 
@@ -179,6 +180,7 @@ class EvaluateAnnotations():
             annotations_synapses_collection_name
 
         self.compute_mincut_metric = compute_mincut_metric
+        self.num_workers = num_workers
 
         self.site_fragment_lut_directory = os.path.join(
             self.fragments_file,
@@ -308,7 +310,7 @@ class EvaluateAnnotations():
                 daisy.Roi((0, 0, 0), (9000, 9000, 9000)),
                 daisy.Roi((0, 0, 0), (9000, 9000, 9000)),
                 lambda b: self.store_lut_in_block(b),
-                num_workers=48,
+                num_workers=self.num_workers,
                 fit='shrink')
 
         else:
@@ -376,11 +378,13 @@ class EvaluateAnnotations():
             node_attribute_collections={
                 self.node_mask: ['masked'],
                 self.node_components: ['component_id'],
-            })
+            }
+        )
 
         skeletons = skeletons_provider.get_graph(
                 self.roi,
-                nodes_filter={'masked': True})
+                nodes_filter={'masked': True}
+        )
         logging.info(f"Found {skeletons.number_of_nodes()} skeleton nodes")
 
         # remove outside edges and nodes
@@ -762,6 +766,7 @@ class EvaluateAnnotations():
         number_of_split_skeletons = len(split_stats)
         number_of_merging_segments = len(merge_stats)
 
+        logging.info(f"Threshold: {threshold}")
         logging.info(f"ERL: {erl}")
         logging.info(f"Max ERL: {max_erl}")
         logging.info(f"Total path length: {self.total_length}")
@@ -915,27 +920,52 @@ if __name__ == "__main__":
     # with open(config_file, 'r') as f:
     #     config = json.load(f)
 
+    # config = {
+    #     "experiment": "zebrafinch",
+    #     "setup": "setup02",
+    #     "config_slab": "mtlsd",
+    #     "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+    #     "fragments_dataset": "/volumes/fragments",
+    #     "edges_db_host": "cajalg001",
+    #     "edges_db_name": "zf_test6",
+    #     "edges_collection": "edges_hist_quant_75",
+    #     "scores_db_name": "scores",
+    #     "annotations_db_host": "cajalg001",
+    #     "annotations_db_name": "annotations",
+    #     "annotations_skeletons_collection_name": "zebrafinch",
+    #     "node_components": "zebrafinch_components",
+    #     "node_mask": "zebrafinch_mask",
+    #     "roi_offset": [50800, 43200, 44100],
+    #     "roi_shape": [10800, 10800, 10800],
+    #     "thresholds_minmax": [0.5, 1],
+    #     "thresholds_step": 1,
+    #     "run_type": "11_micron_roi_masked",
+    #     # "run_type": "test",
+    # }
+
+
     config = {
         "experiment": "zebrafinch",
-        "setup": "setup02",
-        "config_slab": "mtlsd",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
+        "setup": "setup01",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "edges_db_host": "cajalg001",
-        "edges_db_name": "zf_test6",
+        "edges_db_name": "zf_crunchy2",
         "edges_collection": "edges_hist_quant_75",
-        "scores_db_name": "scores",
+        "scores_db_name": "scores_zf_crunchy2",
         "annotations_db_host": "cajalg001",
         "annotations_db_name": "annotations",
         "annotations_skeletons_collection_name": "zebrafinch",
         "node_components": "zebrafinch_components",
         "node_mask": "zebrafinch_mask",
-        "roi_offset": [50800, 43200, 44100],
-        "roi_shape": [10800, 10800, 10800],
-        "thresholds_minmax": [0.5, 1],
+        # "roi_offset": [50800, 43200, 44100],  # 11u
+        # "roi_shape": [10800, 10800, 10800],  # 11u
+        "roi_offset": [4000, 7200, 4500],
+        "roi_shape": [106000, 83700, 87300],
+        "thresholds_minmax": [0.4, 1],
         "thresholds_step": 1,
-        "run_type": "11_micron_roi_masked",
-        # "run_type": "test",
+        "run_type": "benchmark_roi_masked",
+        "num_workers": 4,
     }
 
     evaluate = EvaluateAnnotations(**config)

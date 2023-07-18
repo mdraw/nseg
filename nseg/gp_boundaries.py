@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import softmax
 import gunpowder as gp
 
 
@@ -48,6 +49,7 @@ class AddBoundaryLabels(gp.BatchFilter):
 
 
 class ArgMax(gp.BatchFilter):
+    """Wraps np.argmax()"""
     def __init__(self, array, axis=1, keepdims=True):
         self.array = array
         self.axis = axis
@@ -61,3 +63,50 @@ class ArgMax(gp.BatchFilter):
         arr = batch.arrays[self.array]
         arr.data = np.argmax(arr.data, self.axis, keepdims=self.keepdims)
 
+
+class SoftMax(gp.BatchFilter):
+    """Wraps scipy.special.softmax()"""
+    def __init__(self, array, axis=1):
+        self.array = array
+        self.axis = axis
+
+    def process(self, batch, request):
+
+        if self.array not in batch.arrays:
+            return
+
+        arr = batch.arrays[self.array]
+        arr.data = softmax(arr.data, self.axis)
+
+
+class Take(gp.BatchFilter):
+    """Wraps np.take()"""
+    def __init__(self, array, indices, axis):
+        self.array = array
+        self.indices = indices
+        self.axis = axis
+
+    def process(self, batch, request):
+
+        if self.array not in batch.arrays:
+            return
+
+        arr = batch.arrays[self.array]
+        arr.data = np.take(arr.data, indices=self.indices, axis=self.axis)
+
+
+class Apply(gp.BatchFilter):
+    """Apply arbitrary function with *args, **kwargs to array"""
+    def __init__(self, array, function, *args, **kwargs):
+        self.array = array
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+
+    def process(self, batch, request):
+
+        if self.array not in batch.arrays:
+            return
+
+        arr = batch.arrays[self.array]
+        arr.data = self.function(arr.data, *self.args, **self.kwargs)
