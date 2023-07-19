@@ -220,19 +220,19 @@ def check_block(blocks_agglomerated, block):
 
     return done
 
-if __name__ == "__main__":
+def main():
 
     config = {
         "experiment": "zebrafinch",
         "setup": "setup01",
-        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2.zarr",
+        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a.zarr",
         "affs_dataset": "/volumes/affs",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "block_size": [3600, 3600, 3600],
         "context": [240, 243, 243],
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy1h",
+        "db_name": "zf_crunchy32a",
         "num_workers": 64,
         "merge_function": "hist_quant_75",
         "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
@@ -253,3 +253,7 @@ if __name__ == "__main__":
 
     seconds = end - start
     logging.info(f'Total time to agglomerate: {seconds}')
+
+
+if __name__ == "__main__":
+    main()

@@ -145,7 +145,7 @@ def segment_in_block(
         fragments,
         lut):
 
-    logging.info("Copying fragments to memory...")
+    logging.debug("Copying fragments to memory...")
 
     # load fragments
     fragments = fragments.to_ndarray(block.write_roi)
@@ -156,7 +156,10 @@ def segment_in_block(
 
     segmentation[block.write_roi] = relabelled
 
-if __name__ == "__main__":
+    return 0  # return 0 to indicate success
+
+
+def main():
 
     # config_file = sys.argv[1]
 
@@ -164,17 +167,21 @@ if __name__ == "__main__":
     #     config = json.load(f)
 
     config = {
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "edges_collection": "edges_hist_quant_75",
         "threshold": 0.4,
         "block_size": [3600, 3600, 3600],
-        "out_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_seg.zarr",
+        "out_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_seg.zarr",
         "out_dataset": "volumes/segmentation_40",
-        "num_workers": 3,
-        "run_type": "benchmark_roi_masked",
+        "num_workers": 64,
+        "run_type": "32_micron_roi_masked",
     }
 
     start = time.time()
     extract_segmentation(**config)
     logging.info("Took {time.time() - start} seconds to extract segmentation from LUT")
+
+
+if __name__ == "__main__":
+    main()

@@ -184,8 +184,11 @@ def get_connected_components(
 
     np.savez_compressed(out_file, fragment_segment_lut=lut)
 
-if __name__ == "__main__":
+    return 0  # return 0 to indicate success
 
+
+
+def main():
     # config_file = sys.argv[1]
 
     # with open(config_file, 'r') as f:
@@ -193,19 +196,22 @@ if __name__ == "__main__":
 
     config = {
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy1h",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
+        "db_name": "zf_crunchy32a",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
         "edges_collection": "edges_hist_quant_75",
         "thresholds_minmax": [0, 1],
-        # "thresholds_step": 0.02,
-        "thresholds_step": 0.2,
+        "thresholds_step": 0.02,
         "block_size": [3600, 3600, 3600],
-        "num_workers": 32,
+        "num_workers": 1,
         "fragments_dataset": "/volumes/fragments",
-        "run_type": "benchmark_roi"
+        "run_type": "32_micron_roi_masked"
     }
 
     start = time.time()
     find_segments(**config)
 
     logging.info('Took {time.time() - start} seconds to find segments and store LUTs')
+
+
+if __name__ == "__main__":
+    main()

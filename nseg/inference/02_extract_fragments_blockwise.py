@@ -290,8 +290,7 @@ def check_block(blocks_extracted, block):
 
     return done
 
-if __name__ == "__main__":
-
+def main():
     # config_file = sys.argv[1]
 
     # with open(config_file, 'r') as f:
@@ -300,14 +299,14 @@ if __name__ == "__main__":
     config = {
         "experiment": "zebrafinch",
         "setup": "setup01",
-        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2.zarr",
+        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a.zarr",
         "affs_dataset": "/volumes/affs",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "block_size": [3600, 3600, 3600],
         "context": [240, 243, 243],
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy2",
+        "db_name": "zf_crunchy32a",
         "num_workers": 100,
         "fragments_in_xy": True,
         "epsilon_agglomerate": 0.1,
@@ -332,3 +331,7 @@ if __name__ == "__main__":
 
     seconds = end - start
     logging.info(f'Total time to extract fragments: {seconds}')
+
+
+if __name__ == "__main__":
+    main()

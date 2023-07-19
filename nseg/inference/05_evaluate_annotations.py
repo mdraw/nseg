@@ -387,6 +387,13 @@ class EvaluateAnnotations():
         )
         logging.info(f"Found {skeletons.number_of_nodes()} skeleton nodes")
 
+        if skeletons.number_of_nodes() == 0:
+            num_unfiltered = skeletons_provider.get_graph(self.roi).number_of_nodes()
+            if num_unfiltered > 0:
+                raise RuntimeError(f"{num_unfiltered} nodes were found when disregarding mask but no masked-in skeleton nodes found. Please check if there is a mask collection matching 'nodes_' + '({self.run_type=})'")
+            else:
+                raise RuntimeError("No nodes found. Please check database collection names.")
+
         # remove outside edges and nodes
         remove_nodes = []
         for node, data in skeletons.nodes(data=True):
@@ -913,7 +920,8 @@ def find_worst_split_merges(rand_voi_report):
     for (s, i) in merges[-10:]:
         logging.info(f"\tsegment {i}\tVOI merge {s}")
 
-if __name__ == "__main__":
+
+def main():
 
     # config_file = sys.argv[1]
 
@@ -940,19 +948,18 @@ if __name__ == "__main__":
     #     "thresholds_minmax": [0.5, 1],
     #     "thresholds_step": 1,
     #     "run_type": "11_micron_roi_masked",
-    #     # "run_type": "test",
     # }
 
 
     config = {
         "experiment": "zebrafinch",
         "setup": "setup01",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy2_fragments.zarr",
+        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
         "fragments_dataset": "/volumes/fragments",
         "edges_db_host": "cajalg001",
-        "edges_db_name": "zf_crunchy2",
+        "edges_db_name": "zf_crunchy32a",
         "edges_collection": "edges_hist_quant_75",
-        "scores_db_name": "scores_zf_crunchy2",
+        "scores_db_name": "scores_zf_crunchy32a",
         "annotations_db_host": "cajalg001",
         "annotations_db_name": "annotations",
         "annotations_skeletons_collection_name": "zebrafinch",
@@ -960,11 +967,13 @@ if __name__ == "__main__":
         "node_mask": "zebrafinch_mask",
         # "roi_offset": [50800, 43200, 44100],  # 11u
         # "roi_shape": [10800, 10800, 10800],  # 11u
-        "roi_offset": [4000, 7200, 4500],
-        "roi_shape": [106000, 83700, 87300],
+        "roi_offset": [40000, 32400, 33300],  # 32u
+        "roi_shape": [32400, 32400, 32400],  # 32u
+        # "roi_offset": [4000, 7200, 4500],  # benchmark_roi
+        # "roi_shape": [106000, 83700, 87300],  # benchmark_roi
         "thresholds_minmax": [0.4, 1],
         "thresholds_step": 1,
-        "run_type": "benchmark_roi_masked",
+        "run_type": "32_micron_roi_masked",
         "num_workers": 4,
     }
 
@@ -972,6 +981,8 @@ if __name__ == "__main__":
     evaluate.evaluate()
 
 
+if __name__ == "__main__":
+    main()
 
 
 """

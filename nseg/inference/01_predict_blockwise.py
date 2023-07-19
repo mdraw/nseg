@@ -291,19 +291,21 @@ def check_block(blocks_predicted, block):
 
     return done
 
-if __name__ == "__main__":
+
+def main():
 
     config = {
         "experiment": "zebrafinch",
         "setup": "setup01",
         "model_path": "/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt",
-        "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_benchmark_roi.json",
+        # "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_benchmark_roi.json",
+        "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_32_micron_roi.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "zebrafinch_crunchy2.zarr",
+        "file_name": "zebrafinch_crunchy32a.zarr",
         "num_workers": 100,
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy2",
+        "db_name": "zf_crunchy32a",
         # "net_input_shape": [84, 268, 268],
         "net_input_shape": [96, 484, 484],
         "net_offset": [40, 40, 40],
@@ -333,3 +335,7 @@ if __name__ == "__main__":
 
     seconds = end - start
     logging.info(f'Total time to predict: {seconds}')
+
+
+if __name__ == "__main__":
+    main()
