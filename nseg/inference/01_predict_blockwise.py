@@ -25,7 +25,7 @@ def predict_blockwise(
         num_workers,
         db_host,
         db_name,
-        outputs,
+        output_cfg,
         net_input_shape,
         net_offset,
         voxel_size,
@@ -140,7 +140,7 @@ def predict_blockwise(
 
 
     # get output file(s) meta data from config.json, prepare dataset(s)
-    for output_name, val in outputs.items():
+    for output_name, val in output_cfg.items():
         out_dims = val['out_dims']
         out_dtype = val['out_dtype']
         out_dataset = f'volumes/{output_name}'
@@ -191,6 +191,7 @@ def predict_blockwise(
             net_output_size=net_output_size,
             initial_timestamp=initial_timestamp,
             slurm_options=slurm_options,
+            output_cfg=output_cfg,
         ),
         check_function=lambda b: check_block(blocks_predicted, b),
         num_workers=num_workers,
@@ -214,6 +215,7 @@ def predict_worker(
         net_output_size,
         initial_timestamp,
         slurm_options,
+        output_cfg,
 ):
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
@@ -241,6 +243,7 @@ def predict_worker(
         'worker_config': worker_config,
         'input_size': net_input_size,
         'output_size': net_output_size,
+        'output_cfg': output_cfg,
     }
 
     # get a unique hash for this configuration
@@ -302,20 +305,20 @@ def main():
         "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_32_micron_roi.json",
         "raw_dataset": "volumes/raw",
         "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "zebrafinch_crunchy32a.zarr",
-        "num_workers": 100,
+        "file_name": "zebrafinch_crunchy32d.zarr",
+        "num_workers": 1,
         "db_host": "cajalg001",
-        "db_name": "zf_crunchy32a",
+        "db_name": "zf_crunchy32d",
         # "net_input_shape": [84, 268, 268],
         "net_input_shape": [96, 484, 484],
         "net_offset": [40, 40, 40],
         "voxel_size": [20, 9, 9],
         "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
-        "outputs": {
-            "affs": {"out_dims": 3, "out_dtype": "uint8"},
-            "lsds": {"out_dims": 10, "out_dtype": "uint8"},
-            "boundaries": {"out_dims": 1, "out_dtype": "uint8"},
-            "hardness": {"out_dims": 1, "out_dtype": "float32"},
+        "output_cfg": {
+            # "lsds": {"idx": 0, "out_dims": 10, "out_dtype": "uint8", "squeeze": True, "scale": 255},
+            # "affs": {"idx": 1, "out_dims": 3, "out_dtype": "uint8", "squeeze": True, "scale": 255},
+            "boundaries": {"idx": 2, "out_dims": 1, "out_dtype": "uint8", "squeeze": True, "scale": 255},
+            # "hardness": {"idx": 3, "out_dims": 1, "out_dtype": "float32", "squeeze": True, "scale": 0.5},
         },
         "slurm_options": [
             "--ntasks=1",

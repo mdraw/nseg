@@ -71,19 +71,19 @@ def predict(
     worker_config,
     input_size,
     output_size,
+    output_cfg,
 ):
+    output_names = list(output_cfg.keys())
+
+
     raw = gp.ArrayKey("RAW")
-    lsds = gp.ArrayKey("LSDS")
-    affs = gp.ArrayKey("AFFS")
-    boundaries = gp.ArrayKey('BOUNDARIES')
-    hardness = gp.ArrayKey('HARDNESS')
+    output_arrkeys = {k: gp.ArrayKey(k.upper()) for k in output_names}
 
     chunk_request = gp.BatchRequest()
     chunk_request.add(raw, input_size)
-    chunk_request.add(lsds, output_size)
-    chunk_request.add(affs, output_size)
-    chunk_request.add(boundaries, output_size)
-    chunk_request.add(hardness, output_size)
+
+    for arrkey in output_arrkeys.values():
+        chunk_request.add(arrkey, output_size)
 
     pipeline = gp.ZarrSource(
         raw_file,
@@ -106,10 +106,12 @@ def predict(
     if model_path.lower() == 'dummy':
         model = DummyModel().eval()
     else:
-        model = torch.load(model_path)
+        model = torch.load(model_path).eval()
 
     # TODO: Clear up model_path vs. checkpoint path use - support both? See segment_mtlsd.py
     checkpoint_path = None
+
+    _predict_outputs = {output_cfg[n]['idx']: output_arrkeys[n] for n in output_names}
 
     pipeline += Predict(
         model=model,
@@ -117,63 +119,49 @@ def predict(
         inputs={
             'input': raw
         },
-        outputs={
-            0: lsds,
-            1: affs,
-            2: boundaries,
-            3: hardness,
-        }
+        outputs=_predict_outputs,
     )
 
-    # pipeline += ArgMax(boundaries)
+    if 'boundaries' in output_names:
+        boundary_arrkey = output_arrkeys['boundaries']
+        # pipeline += ArgMax(boundaries)
+        pipeline += SoftMax(boundary_arrkey)
+        pipeline += Take(boundary_arrkey, 1, 1)  # Take channel 1
 
-    pipeline += SoftMax(boundaries)
-    pipeline += Take(boundaries, 1, 1)  # Take channel 1
+    outputs_to_squeeze = [
+        output_arrkeys[k]
+        for k, v in output_cfg.items()
+        if v['squeeze']
+    ]
 
     pipeline += gp.Squeeze([
         raw,
-        lsds,
-        affs,
-        boundaries,
-        hardness,
+        *outputs_to_squeeze
     ])
 
-    pipeline += gp.Squeeze([
-        raw,
-    #     lsds,
-    #     affs,
-    #     boundaries,
-    #     hardness,
-    ])
+    pipeline += gp.Squeeze([raw])
 
-    # pipeline += gp.IntensityScaleShift(raw, 255, 0)
-    pipeline += gp.IntensityScaleShift(affs, 255, 0)
-    pipeline += gp.IntensityScaleShift(lsds, 255, 0)
-    pipeline += gp.IntensityScaleShift(boundaries, 255, 0)
-    pipeline += gp.IntensityScaleShift(hardness, 0.5, 0)  # This should keep values between 0 and 1
+    for k, v in output_cfg.items():
+        if v.get('scale', 1) != 1:
+            pipeline += gp.IntensityScaleShift(output_arrkeys[k], v['scale'], 0)
 
+    out_dataset_names = {
+        v: f'volumes/{k}' for k, v in output_arrkeys.items()
+    }
+    # out_dataset_names[raw] = 'volumes/raw'
 
     pipeline += gp.ZarrWrite(
-        dataset_names={
-            # raw: 'raw',
-            affs: 'volumes/affs',
-            lsds: 'volumes/lsds',
-            boundaries: 'volumes/boundaries',
-            hardness: 'volumes/hardness',
-        },
+        dataset_names=out_dataset_names,
         output_filename=out_file,
     )
     pipeline += gp.PrintProfilingStats(every=10)
 
+    roi_map = {output_arrkeys[k]: "write_roi" for k in output_names}
+    roi_map[raw] = "read_roi"
+
     pipeline += gp.DaisyRequestBlocks(
         chunk_request,
-        roi_map={
-            raw: "read_roi",
-            affs: "write_roi",
-            lsds: "write_roi",
-            boundaries: "write_roi",
-            hardness: "write_roi",
-        },
+        roi_map=roi_map,
         num_workers=worker_config["num_cache_workers"],
         block_done_callback=lambda b, s, d: block_done_callback(
             db_host, db_name, worker_config, b, s, d
