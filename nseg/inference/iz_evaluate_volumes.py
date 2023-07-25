@@ -1,3 +1,6 @@
+raise NotImplementedError("Needs to be adapted to nseg first")
+
+
 import daisy
 import json
 import logging

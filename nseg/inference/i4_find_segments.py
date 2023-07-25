@@ -8,7 +8,8 @@ import sys
 import time
 from funlib.segment.graphs.impl import connected_components
 
-logging.basicConfig(level=logging.INFO)
+from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+
 
 def find_segments(
         db_host,
@@ -23,7 +24,8 @@ def find_segments(
         run_type=None,
         roi_offset=None,
         roi_shape=None,
-        **kwargs):
+        **_  # Gobble all other kwargs
+):
 
     '''
 
@@ -187,30 +189,22 @@ def get_connected_components(
     return 0  # return 0 to indicate success
 
 
-
-def main():
-    # config_file = sys.argv[1]
-
-    # with open(config_file, 'r') as f:
-    #     config = json.load(f)
-
-    config = {
-        "db_host": "cajalg001",
-        "db_name": "zf_crunchy32a",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
-        "edges_collection": "edges_hist_quant_75",
-        "thresholds_minmax": [0, 1],
-        "thresholds_step": 0.02,
-        "block_size": [3600, 3600, 3600],
-        "num_workers": 1,
-        "fragments_dataset": "/volumes/fragments",
-        "run_type": "32_micron_roi_masked"
-    }
+@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+def main(cfg: DictConfig) -> None:
 
     start = time.time()
-    find_segments(**config)
 
-    logging.info('Took {time.time() - start} seconds to find segments and store LUTs')
+    dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i4_find_segments'])
+
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
+    dict_cfg['_hydra_run_dir'] = _hydra_run_dir
+    logging.info(f'Config: {dict_cfg}')
+    find_segments(**dict_cfg)
+
+    logging.info(f'Took {time.time() - start} seconds to find segments and store LUTs')
 
 
 if __name__ == "__main__":

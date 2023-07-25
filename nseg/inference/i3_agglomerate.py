@@ -10,6 +10,11 @@ import pymongo
 import sys
 import time
 
+from pathlib import Path
+
+from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+
+
 logging.basicConfig(level=logging.INFO)
 
 def agglomerate(
@@ -27,6 +32,8 @@ def agglomerate(
         merge_function,
         pybin,
         slurm_options,
+        _hydra_run_dir,
+        **_  # Gobble all other kwargs
 ):
 
     '''
@@ -138,6 +145,7 @@ def agglomerate(
             initial_timestamp=initial_timestamp,
             pybin=pybin,
             slurm_options=slurm_options,
+            _hydra_run_dir=_hydra_run_dir,
         ),
         check_function=lambda b: check_block(
             blocks_agglomerated,
@@ -160,13 +168,14 @@ def start_worker(
         initial_timestamp,
         pybin,
         slurm_options,
+        _hydra_run_dir,
 ):
 
     worker_id = daisy.Context.from_env().worker_id
 
     logging.info(f"worker {worker_id} started...")
 
-    output_dir = os.path.join('.agglomerate_blockwise', network_dir, initial_timestamp)
+    output_dir = os.path.join(_hydra_run_dir, 'agglomerate_blockwise', network_dir, initial_timestamp)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -195,9 +204,7 @@ def start_worker(
 
     logging.info('Running block with config %s...'%config_file)
 
-    worker = 'workers/agglomerate_worker.py'
-
-    worker_command = os.path.join('.', worker)
+    worker_script = Path(__file__).parent / 'workers' / 'agglomerate_worker.py'
 
     _pyb_log_out = os.path.join(output_dir, f'{timestamp}_log_{worker_id}')
 
@@ -207,7 +214,7 @@ def start_worker(
         'srun',
         *slurm_options,
         '-o', f'{log_out}',
-        f'{pybin} {worker_command} {config_file} &> {_pyb_log_out}'
+        f'{pybin} {worker_script} {config_file} &> {_pyb_log_out}'
     ]
 
     logging.info(f'Base command: {base_command}')
@@ -220,34 +227,22 @@ def check_block(blocks_agglomerated, block):
 
     return done
 
-def main():
 
-    config = {
-        "experiment": "zebrafinch",
-        "setup": "setup01",
-        "affs_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a.zarr",
-        "affs_dataset": "/volumes/affs",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
-        "fragments_dataset": "/volumes/fragments",
-        "block_size": [3600, 3600, 3600],
-        "context": [240, 243, 243],
-        "db_host": "cajalg001",
-        "db_name": "zf_crunchy32a",
-        "num_workers": 64,
-        "merge_function": "hist_quant_75",
-        "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
-        "slurm_options": [
-            "--ntasks=1",
-            "--time=1-0",
-            "--mem=400G",
-            "--cpus-per-task=24",
-            "--job-name=ns03ag",
-        ],
-    }
+@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+def main(cfg: DictConfig) -> None:
+
 
     start = time.time()
 
-    agglomerate(**config)
+    dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i3_agglomerate'])
+
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
+    dict_cfg['_hydra_run_dir'] = _hydra_run_dir
+    logging.info(f'Config: {dict_cfg}')
+    agglomerate(**dict_cfg)
 
     end = time.time()
 

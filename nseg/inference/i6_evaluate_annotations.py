@@ -15,7 +15,17 @@ from funlib.evaluate import rand_voi, \
         split_graph
 from pymongo import MongoClient
 
-logging.basicConfig(level=logging.INFO)
+from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+
+
+def get_roi_from_raw_spec(raw_file: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    with open(raw_file) as f:
+        raw_spec = json.load(f)
+    offset = tuple(raw_spec['offset'])
+    size = tuple(raw_spec['size'])
+    shape = size  # Here this seems to be the same
+    return offset, shape
+
 
 class EvaluateAnnotations():
 
@@ -31,12 +41,13 @@ class EvaluateAnnotations():
             scores_db_name,
             annotations_db_name,
             annotations_skeletons_collection_name,
-            roi_offset,
-            roi_shape,
             thresholds_minmax,
             thresholds_step,
             node_components,
             node_mask,
+            roi_offset=None,
+            roi_shape=None,
+            raw_file=None,
             method=None,
             run_type=None,
             scores_db_host=None,
@@ -44,7 +55,8 @@ class EvaluateAnnotations():
             annotations_synapses_collection_name=None,
             compute_mincut_metric=False,
             num_workers=4,
-            **kwargs):
+            **_ # Gobble all other kwargs
+    ):
 
 
         '''
@@ -162,6 +174,10 @@ class EvaluateAnnotations():
         self.annotations_db_name = annotations_db_name
         self.annotations_skeletons_collection_name = \
             annotations_skeletons_collection_name
+
+        if roi_offset is None or roi_shape is None:
+            assert roi_offset is None and roi_shape is None, 'Either both or neither roi_offset and roi_shape must be None.'
+            roi_offset, roi_shape = get_roi_from_raw_spec(raw_file=raw_file)
 
         self.roi = daisy.Roi(roi_offset, roi_shape)
         self.thresholds_minmax = thresholds_minmax
@@ -864,6 +880,9 @@ class EvaluateAnnotations():
 
         find_worst_split_merges(rand_voi_report)
 
+        return 0  # return 0 to indicate success
+
+
 def get_site_fragment_lut(fragments, sites, roi):
     #Get the fragment IDs of all the sites that are contained in the given ROI
 
@@ -921,64 +940,24 @@ def find_worst_split_merges(rand_voi_report):
         logging.info(f"\tsegment {i}\tVOI merge {s}")
 
 
-def main():
+@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+def main(cfg: DictConfig) -> None:
 
-    # config_file = sys.argv[1]
+    start = time.time()
 
-    # with open(config_file, 'r') as f:
-    #     config = json.load(f)
+    dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
-    # config = {
-    #     "experiment": "zebrafinch",
-    #     "setup": "setup02",
-    #     "config_slab": "mtlsd",
-    #     "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/fragments/frag_test6.zarr",
-    #     "fragments_dataset": "/volumes/fragments",
-    #     "edges_db_host": "cajalg001",
-    #     "edges_db_name": "zf_test6",
-    #     "edges_collection": "edges_hist_quant_75",
-    #     "scores_db_name": "scores",
-    #     "annotations_db_host": "cajalg001",
-    #     "annotations_db_name": "annotations",
-    #     "annotations_skeletons_collection_name": "zebrafinch",
-    #     "node_components": "zebrafinch_components",
-    #     "node_mask": "zebrafinch_mask",
-    #     "roi_offset": [50800, 43200, 44100],
-    #     "roi_shape": [10800, 10800, 10800],
-    #     "thresholds_minmax": [0.5, 1],
-    #     "thresholds_step": 1,
-    #     "run_type": "11_micron_roi_masked",
-    # }
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_evaluate_annotations'])
 
-
-    config = {
-        "experiment": "zebrafinch",
-        "setup": "setup01",
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
-        "fragments_dataset": "/volumes/fragments",
-        "edges_db_host": "cajalg001",
-        "edges_db_name": "zf_crunchy32a",
-        "edges_collection": "edges_hist_quant_75",
-        "scores_db_name": "scores_zf_crunchy32a",
-        "annotations_db_host": "cajalg001",
-        "annotations_db_name": "annotations",
-        "annotations_skeletons_collection_name": "zebrafinch",
-        "node_components": "zebrafinch_components",
-        "node_mask": "zebrafinch_mask",
-        # "roi_offset": [50800, 43200, 44100],  # 11u
-        # "roi_shape": [10800, 10800, 10800],  # 11u
-        "roi_offset": [40000, 32400, 33300],  # 32u
-        "roi_shape": [32400, 32400, 32400],  # 32u
-        # "roi_offset": [4000, 7200, 4500],  # benchmark_roi
-        # "roi_shape": [106000, 83700, 87300],  # benchmark_roi
-        "thresholds_minmax": [0.4, 1],
-        "thresholds_step": 1,
-        "run_type": "32_micron_roi_masked",
-        "num_workers": 4,
-    }
-
-    evaluate = EvaluateAnnotations(**config)
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
+    dict_cfg['_hydra_run_dir'] = _hydra_run_dir
+    logging.info(f'Config: {dict_cfg}')
+    evaluate = EvaluateAnnotations(**dict_cfg)
     evaluate.evaluate()
+
+    logging.info(f"Took {time.time() - start} seconds to evaluate annotations")
+
 
 
 if __name__ == "__main__":

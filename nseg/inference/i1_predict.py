@@ -1,6 +1,7 @@
 # Based on https://github.com/funkelab/lsd/blob/b6aee2fd0c87bc70a52ea77e85f24cc48bc4f437/lsd/tutorial/scripts/01_predict_blockwise.py
 
 from pathlib import Path
+from typing import Any
 import daisy
 import datetime
 import hashlib
@@ -12,7 +13,10 @@ import pymongo
 import sys
 import time
 
-logging.basicConfig(level=logging.INFO)
+from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+
+
+# logging.basicConfig(level=logging.INFO)
 
 def predict_blockwise(
         experiment,
@@ -20,8 +24,7 @@ def predict_blockwise(
         model_path,
         raw_file,
         raw_dataset,
-        out_base,
-        file_name,
+        out_file,
         num_workers,
         db_host,
         db_name,
@@ -31,6 +34,8 @@ def predict_blockwise(
         voxel_size,
         pybin,
         slurm_options,
+        _hydra_run_dir,
+        **_  # Gobble all other kwargs
 ):
 
     '''
@@ -104,7 +109,7 @@ def predict_blockwise(
     network_dir = os.path.join(experiment, setup)
 
     raw_file = os.path.abspath(raw_file)
-    out_file = os.path.abspath(os.path.join(out_base, setup, file_name))
+    # out_file = os.path.abspath(os.path.join(out_base, setup, file_name))
 
     try:
         source = daisy.open_ds(raw_file, raw_dataset)
@@ -192,6 +197,7 @@ def predict_blockwise(
             initial_timestamp=initial_timestamp,
             slurm_options=slurm_options,
             output_cfg=output_cfg,
+            _hydra_run_dir=_hydra_run_dir,
         ),
         check_function=lambda b: check_block(blocks_predicted, b),
         num_workers=num_workers,
@@ -216,6 +222,7 @@ def predict_worker(
         initial_timestamp,
         slurm_options,
         output_cfg,
+        _hydra_run_dir,
 ):
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
@@ -253,7 +260,7 @@ def predict_worker(
     # get worker id
     worker_id = daisy.Context.from_env().worker_id
 
-    output_dir = os.path.join('.predict_blockwise', network_dir, initial_timestamp)
+    output_dir = os.path.join(_hydra_run_dir, 'predict_blockwise', network_dir, initial_timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
     # pipe output
@@ -294,45 +301,21 @@ def check_block(blocks_predicted, block):
 
     return done
 
-
-def main():
-
-    config = {
-        "experiment": "zebrafinch",
-        "setup": "setup01",
-        "model_path": "/cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt",
-        # "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_benchmark_roi.json",
-        "raw_file": "/cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_32_micron_roi.json",
-        "raw_dataset": "volumes/raw",
-        "out_base": "/cajal/scratch/projects/misc/mdraw/lsd-results/",
-        "file_name": "zebrafinch_crunchy32d.zarr",
-        "num_workers": 1,
-        "db_host": "cajalg001",
-        "db_name": "zf_crunchy32d",
-        # "net_input_shape": [84, 268, 268],
-        "net_input_shape": [96, 484, 484],
-        "net_offset": [40, 40, 40],
-        "voxel_size": [20, 9, 9],
-        "pybin": "/cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python",
-        "output_cfg": {
-            # "lsds": {"idx": 0, "out_dims": 10, "out_dtype": "uint8", "squeeze": True, "scale": 255},
-            # "affs": {"idx": 1, "out_dims": 3, "out_dtype": "uint8", "squeeze": True, "scale": 255},
-            "boundaries": {"idx": 2, "out_dims": 1, "out_dtype": "uint8", "squeeze": True, "scale": 255},
-            # "hardness": {"idx": 3, "out_dims": 1, "out_dtype": "float32", "squeeze": True, "scale": 0.5},
-        },
-        "slurm_options": [
-            "--ntasks=1",
-            "--time=1-0",
-            "--mem=100G",
-            "--cpus-per-task=24",
-            "--gres=gpu:1",
-            "--job-name=ns01pr",
-        ],
-    }
+@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+def main(cfg: DictConfig) -> None:
 
     start = time.time()
 
-    predict_blockwise(**config)
+    dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i1_predict'])
+
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
+    logging.info(f'Config: {dict_cfg}')
+
+    predict_blockwise(**dict_cfg)
+
 
     end = time.time()
 

@@ -7,7 +7,8 @@ import sys
 import time
 from funlib.segment.arrays import replace_values
 
-logging.basicConfig(level=logging.INFO)
+from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+
 
 def extract_segmentation(
         fragments_file,
@@ -15,13 +16,14 @@ def extract_segmentation(
         edges_collection,
         threshold,
         block_size,
-        out_file,
-        out_dataset,
+        seg_file,
+        seg_dataset,
         num_workers,
         roi_offset=None,
         roi_shape=None,
         run_type=None,
-        **kwargs):
+        **_ # Gobble all other kwargs
+):
 
     '''
 
@@ -48,11 +50,11 @@ def extract_segmentation(
             The size of one block in world units (must be multiple of voxel
             size).
 
-        out_file (``string``):
+        seg_file (``string``):
 
             Path to file (zarr/n5) to write segmentation to.
 
-        out_dataset (``string``):
+        seg_dataset (``string``):
 
             Name of segmentation dataset (e.g `volumes/segmentation`).
 
@@ -92,8 +94,8 @@ def extract_segmentation(
 
     logging.info("Preparing segmentation dataset...")
     segmentation = daisy.prepare_ds(
-        out_file,
-        out_dataset,
+        seg_file,
+        seg_dataset,
         total_roi,
         voxel_size=fragments.voxel_size,
         dtype=np.uint64,
@@ -159,28 +161,21 @@ def segment_in_block(
     return 0  # return 0 to indicate success
 
 
-def main():
-
-    # config_file = sys.argv[1]
-
-    # with open(config_file, 'r') as f:
-    #     config = json.load(f)
-
-    config = {
-        "fragments_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_fragments.zarr",
-        "fragments_dataset": "/volumes/fragments",
-        "edges_collection": "edges_hist_quant_75",
-        "threshold": 0.4,
-        "block_size": [3600, 3600, 3600],
-        "out_file": "/cajal/scratch/projects/misc/mdraw/lsd-results/setup01/zebrafinch_crunchy32a_seg.zarr",
-        "out_dataset": "volumes/segmentation_40",
-        "num_workers": 64,
-        "run_type": "32_micron_roi_masked",
-    }
+@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+def main(cfg: DictConfig) -> None:
 
     start = time.time()
-    extract_segmentation(**config)
-    logging.info("Took {time.time() - start} seconds to extract segmentation from LUT")
+
+    dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
+
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_extract_segmentation'])
+
+    _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
+    dict_cfg['_hydra_run_dir'] = _hydra_run_dir
+    logging.info(f'Config: {dict_cfg}')
+    extract_segmentation(**dict_cfg)
+    logging.info(f"Took {time.time() - start} seconds to extract segmentation from LUT")
 
 
 if __name__ == "__main__":
