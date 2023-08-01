@@ -54,19 +54,30 @@ class HardnessEnhancedLoss(torch.nn.Module):
             self,
             loss_term_weights: dict[str, float],
             enable_hardness_weighting: bool = True,
+            enable_oob_masking: bool = False,
+            normalize_weights: bool = True,
             hardness_loss_formula: str = 'ohl',
     ):
         super().__init__()
 
         self.enable_hardness_weighting = enable_hardness_weighting
+        self.enable_oob_masking = enable_oob_masking
         self.hardness_loss_formula = hardness_loss_formula
+        self.normalize_weights = normalize_weights
+        if normalize_weights:
+            # Normalize weights to sum to 1 so we don't accidentally scale the loss magnitude,
+            #  which would scale the effective gradient update.
+            weight_sum = sum(loss_term_weights.values())
+            loss_term_weights = {
+                k: v / weight_sum
+                for k, v in loss_term_weights.items()
+            }
         self.loss_term_weights = loss_term_weights
         if not self.loss_term_weights:
             raise ValueError('Non-empty loss_term_weights are required.')
         # self.crossentropy = nn.CrossEntropyLoss(
         #     reduction='none'
         # )
-
 
     @staticmethod
     def _scaled_mse(pred: torch.Tensor, target: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
@@ -90,6 +101,7 @@ class HardnessEnhancedLoss(torch.nn.Module):
         # bce_loss_map.unsqueeze_(1)
         return bce_loss_map
 
+    # Deprecated, not used anymore
     @staticmethod
     @torch.no_grad()
     def _compute_mask(*weights, mode='or') -> torch.Tensor:
@@ -112,7 +124,8 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
         return mask
 
-    def _apply_mask(self, loss_map: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    @staticmethod
+    def _apply_mask(loss_map: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         if torch.any(mask):
             # Only keep elements that are not masked out, flatten to 1D
             masked_loss = torch.masked_select(loss_map, mask)
@@ -156,26 +169,28 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
     def compute_seg_loss_maps(
             self,
-            pred_lsds: torch.Tensor,
-            gt_lsds: torch.Tensor,
-            lsds_weights: torch.Tensor,
-            pred_affs: torch.Tensor,
-            gt_affs: torch.Tensor,
-            affs_weights: torch.Tensor,
-            pred_hardness: Optional[torch.Tensor],
-            pred_boundaries: torch.Tensor,
-            gt_boundaries: torch.Tensor,
+            pred_affs: Optional[torch.Tensor],
+            gt_affs: Optional[torch.Tensor],
+            affs_weights: Optional[torch.Tensor],
+            pred_lsds: Optional[torch.Tensor] = None,
+            gt_lsds: Optional[torch.Tensor] = None,
+            lsds_weights: Optional[torch.Tensor] = None,
+            pred_hardness: Optional[torch.Tensor] = None,
+            pred_boundaries: Optional[torch.Tensor] = None,
+            gt_boundaries: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         seg_loss_maps = {}
-        if self.loss_term_weights.get('lsd', 0) != 0:
-            lsd_loss_map = self._scaled_mse(pred_lsds, gt_lsds, lsds_weights)
-            lsd_loss_map = self._apply_hardness_weighting(lsd_loss_map, pred_hardness)
-            seg_loss_maps['lsd'] = lsd_loss_map
         if self.loss_term_weights.get('aff', 0) != 0:
             aff_loss_map = self._scaled_mse(pred_affs, gt_affs, affs_weights)
             aff_loss_map = self._apply_hardness_weighting(aff_loss_map, pred_hardness)
             seg_loss_maps['aff'] = aff_loss_map
+        if self.loss_term_weights.get('lsd', 0) != 0:
+            assert pred_lsds is not None and gt_lsds is not None
+            lsd_loss_map = self._scaled_mse(pred_lsds, gt_lsds, lsds_weights)
+            lsd_loss_map = self._apply_hardness_weighting(lsd_loss_map, pred_hardness)
+            seg_loss_maps['lsd'] = lsd_loss_map
         if self.loss_term_weights.get('bce', 0) != 0:
+            assert pred_boundaries is not None and gt_boundaries is not None
             bce_loss_map = self._compute_bce_map(pred_boundaries, gt_boundaries)#, boundary_weights)
             bce_loss_map = self._apply_hardness_weighting(bce_loss_map, pred_hardness)
             seg_loss_maps['bce'] = bce_loss_map
@@ -192,26 +207,25 @@ class HardnessEnhancedLoss(torch.nn.Module):
                 combined_seg_loss_map += weight * loss_map
         return combined_seg_loss_map
 
-
     def forward(
             self,
-            pred_lsds: torch.Tensor,
-            gt_lsds: torch.Tensor,
-            lsds_weights: torch.Tensor,
             pred_affs: torch.Tensor,
             gt_affs: torch.Tensor,
             affs_weights: torch.Tensor,
-            pred_hardness: Optional[torch.Tensor],
-            pred_boundaries: torch.Tensor,
-            gt_boundaries: torch.Tensor,
+            pred_lsds: Optional[torch.Tensor] = None,
+            gt_lsds: Optional[torch.Tensor] = None,
+            lsds_weights: Optional[torch.Tensor] = None,
+            pred_hardness: Optional[torch.Tensor] = None,
+            pred_boundaries: Optional[torch.Tensor] = None,
+            gt_boundaries: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         seg_loss_maps = self.compute_seg_loss_maps(
-            pred_lsds=pred_lsds,
-            gt_lsds=gt_lsds,
-            lsds_weights=lsds_weights,
             pred_affs=pred_affs,
             gt_affs=gt_affs,
             affs_weights=affs_weights,
+            pred_lsds=pred_lsds,
+            gt_lsds=gt_lsds,
+            lsds_weights=lsds_weights,
             pred_hardness=pred_hardness,
             pred_boundaries=pred_boundaries,
             gt_boundaries=gt_boundaries,
@@ -224,8 +238,7 @@ class HardnessEnhancedLoss(torch.nn.Module):
         # hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
         hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_hardness_relevant_seg_loss_map)
 
-        enable_oob_masking = False
-        if enable_oob_masking:
+        if self.enable_oob_masking:
             total_loss_map = total_seg_loss_map + hardness_loss_map
             mask = self._compute_mask(lsds_weights, affs_weights)
             masked_total_loss = self._apply_mask(total_loss_map, mask)
@@ -288,10 +301,17 @@ def compute_loss_maps(
         **loss_inputs
     )
     total_seg_loss_map = loss_module._combine_seg_loss_maps(seg_loss_maps)
-    pred_hardness = loss_inputs['pred_hardness']
-    hardness_loss_map = loss_module._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
 
-    loss_maps = {**seg_loss_maps, 'total_seg_loss': total_seg_loss_map, 'hardness': hardness_loss_map}
+    loss_maps = {
+        **seg_loss_maps,
+        'total_seg_loss': total_seg_loss_map,
+    }
+
+    pred_hardness = loss_inputs.get('pred_hardness')
+    if pred_hardness is not None:
+        hardness_loss_map = loss_module._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
+        loss_maps['hardness'] = hardness_loss_map
+
     np_loss_maps = as_np_dict(loss_maps)
 
     return np_loss_maps
@@ -582,7 +602,7 @@ def _vmap_sum_10k_norm(x: torch.Tensor) -> torch.Tensor:
 def finalize_hardness(
         pre_hardness: torch.Tensor,
         hardness_c: float = 0.1,
-        normalization_mode = 'sum_numel',
+        normalization_mode: str = 'sum_numel',
 ) -> torch.Tensor:
     """
     Get normalized hardness map H from "pre-hardness" D https://arxiv.org/abs/2305.08462
@@ -686,24 +706,29 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         self.register_module('hardness_fc', hardness_fc)
 
     def forward(self, input):
+        model_outputs = {}
         # pass raw through unet
         outputs = self.backbone(input)
-        assert len(outputs) == 2  # Hardcode for now - TODO: Re-enable support for other head output counts
-        z, pre_hardness = outputs
-
+        # If hardness is predicted, the output is a 2-tuple, because hardness originates from a different head.
+        # All other outputs are from the same head and depend only on z.
+        if isinstance(outputs, (tuple, list)) and len(outputs) == 2:
+            z, pre_hardness = outputs
+            pre_hardness = self.hardness_fc(pre_hardness)
+            hardness = finalize_hardness(pre_hardness, **self.finalize_hardness_kwargs)
+            model_outputs['pred_hardness'] = hardness
+        else:
+            z = outputs
         # pass output through fcs
         lsds = self.lsd_fc(z)
         affs = self.aff_fc(z)
         boundaries = self.boundary_fc(z)
-        pre_hardness = self.hardness_fc(pre_hardness)
-        hardness = finalize_hardness(pre_hardness, **self.finalize_hardness_kwargs)
 
-        model_outputs = {
+        model_outputs.update({
             'pred_lsds': lsds,
             'pred_affs': affs,
             'pred_boundaries': boundaries,
-            'pred_hardness': hardness,
-        }
+            # 'pred_hardness': hardness,
+        })
 
         return model_outputs
 

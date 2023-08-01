@@ -106,6 +106,18 @@ def train(cfg: DictConfig) -> None:
     tr_root = Path(cfg.dataset.tr_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
 
+    # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)
+    # Note that aff(inity) is always included as it's necessary for segmentation
+    loss_term_weights = cfg.loss.init_kwargs.loss_term_weights
+    nonzero_loss_term_weights = {
+        k: v for k, v in loss_term_weights.items() if v != 0 and v is not None
+    }
+    output_names = list(nonzero_loss_term_weights.keys())
+
+    lsd_enabled = 'lsd' in output_names
+    boundaries_enabled = 'bce' in output_names or 'bcd' in output_names
+    hardness_enabled = 'hardness' in output_names
+
     val_root = cfg.dataset.val_root
     if val_root is None:
         val_files = []
@@ -130,12 +142,14 @@ def train(cfg: DictConfig) -> None:
 
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
-    gt_lsds = gp.ArrayKey('GT_LSDS')
-    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
-    pred_lsds = gp.ArrayKey('PRED_LSDS')
     gt_affs = gp.ArrayKey('GT_AFFS')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+
+    gt_lsds = gp.ArrayKey('GT_LSDS')
+    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
+    pred_lsds = gp.ArrayKey('PRED_LSDS')
+
     gt_boundaries = gp.ArrayKey('GT_BOUNDARIES')
     pred_boundaries = gp.ArrayKey('PRED_BOUNDARIES')
 
@@ -172,21 +186,49 @@ def train(cfg: DictConfig) -> None:
 
     optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
 
+    trainer_inputs = {'input': raw}
+    trainer_outputs = {
+        # 'pred_lsds': pred_lsds,
+        'pred_affs': pred_affs,
+        # 'pred_boundaries': pred_boundaries,
+        # 'pred_hardness': pred_hardness,
+    }
+    trainer_loss_inputs = {
+        # 'pred_lsds': pred_lsds,
+        # 'gt_lsds': gt_lsds,
+        # 'lsds_weights': lsds_weights,
+        'pred_affs': pred_affs,
+        'gt_affs': gt_affs,
+        'affs_weights': affs_weights,
+        # 'pred_hardness': pred_hardness,
+        # 'pred_boundaries': pred_boundaries,
+        # 'gt_boundaries': gt_boundaries,
+    }
+
     request = gp.BatchRequest()
     request.add(raw, input_size)
-
-
-
     request.add(labels, output_size)
-    request.add(gt_lsds, output_size)
-    request.add(lsds_weights, output_size)
-    request.add(pred_lsds, output_size)
     request.add(gt_affs, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
-    request.add(gt_boundaries, output_size)
-    request.add(pred_boundaries, output_size)
-    request.add(pred_hardness, output_size)
+
+    if lsd_enabled:
+        request.add(gt_lsds, output_size)
+        request.add(lsds_weights, output_size)
+        request.add(pred_lsds, output_size)
+        trainer_outputs['pred_lsds'] = trainer_loss_inputs['pred_lsds'] = pred_lsds
+        trainer_loss_inputs['gt_lsds'] = gt_lsds
+        trainer_loss_inputs['lsds_weights'] = lsds_weights
+
+    if boundaries_enabled:
+        request.add(gt_boundaries, output_size)
+        request.add(pred_boundaries, output_size)
+        trainer_outputs['pred_boundaries'] = trainer_loss_inputs['pred_boundaries'] = pred_boundaries
+        trainer_loss_inputs['gt_boundaries'] = gt_boundaries
+
+    if hardness_enabled:
+        request.add(pred_hardness, output_size)
+        trainer_outputs['pred_hardness'] = trainer_loss_inputs['pred_hardness'] = pred_hardness
 
     if cfg.dataset.enable_mask:
         request.add(labels_mask, output_size)
@@ -265,19 +307,21 @@ def train(cfg: DictConfig) -> None:
         only_xy=True
     )
 
-    pipeline += AddBoundaryLabels(
-        instance_labels=labels,
-        boundary_labels=gt_boundaries,
-        # dtype=np.int64,
-    )
+    if boundaries_enabled:
+        pipeline += AddBoundaryLabels(
+            instance_labels=labels,
+            boundary_labels=gt_boundaries,
+            # dtype=np.int64,
+        )
 
-    # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
-    pipeline += AddLocalShapeDescriptor(
-        labels,
-        gt_lsds,
-        lsds_mask=lsds_weights,
-        **cfg.labels.lsd
-    )
+    if lsd_enabled:
+        # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
+        pipeline += AddLocalShapeDescriptor(
+            labels,
+            gt_lsds,
+            lsds_mask=lsds_weights,
+            **cfg.labels.lsd
+        )
 
     neighborhood = cfg.labels.aff.nhood
 
@@ -308,25 +352,6 @@ def train(cfg: DictConfig) -> None:
         torch.backends.cudnn.benchmark = True
 
     # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
-
-    trainer_inputs = {'input': raw}
-    trainer_outputs = {
-        'pred_lsds': pred_lsds,
-        'pred_affs': pred_affs,
-        'pred_boundaries': pred_boundaries,
-        'pred_hardness': pred_hardness,
-    }
-    trainer_loss_inputs = {
-        'pred_lsds': pred_lsds,
-        'gt_lsds': gt_lsds,
-        'lsds_weights': lsds_weights,
-        'pred_affs': pred_affs,
-        'gt_affs': gt_affs,
-        'affs_weights': affs_weights,
-        'pred_hardness': pred_hardness,
-        'pred_boundaries': pred_boundaries,
-        'gt_boundaries': gt_boundaries,
-    }
 
     save_every = cfg.training.save_every
     trainer = Train(
@@ -431,31 +456,39 @@ def train(cfg: DictConfig) -> None:
                 pred_affs_slice = get_zslice(batch[pred_affs].data[0])
                 pred_affs_img = wandb.Image(pred_affs_slice)
 
-                gt_lsds3_slice = get_zslice(batch[gt_lsds].data[0][:3])
-                gt_lsds3_img = wandb.Image(gt_lsds3_slice)
-
-                pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
-                pred_lsds3_img = wandb.Image(pred_lsds3_slice)
-
-                pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
-                pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
-
-                with torch.inference_mode():
-                    _th_pred_boundaries = torch.as_tensor(batch[pred_boundaries].data[0], dtype=torch.float32)
-                    _np_sm_pred_boundaries = torch.softmax(_th_pred_boundaries, dim=0).numpy().astype(np.float32)[1]
-                pred_boundaries_slice = get_zslice(_np_sm_pred_boundaries)
-                pred_boundaries_fig = get_mpl_imshow_fig(pred_boundaries_slice)
-                # pred_boundaries_fig = wandb.Image(pred_boundaries_slice)
-
                 tr_imgs_wandb = {
                     'training/images/gt_seg_overlay': gt_seg_overlay_img,
                     'training/images/gt_affs': gt_affs_img,
                     'training/images/pred_affs': pred_affs_img,
-                    'training/images/gt_lsds3': gt_lsds3_img,
-                    'training/images/pred_lsds3': pred_lsds3_img,
-                    'training/images/pred_hardness': pred_hardness_fig,
-                    'training/images/pred_boundaries': pred_boundaries_fig,
                 }
+
+                if lsd_enabled:
+                    gt_lsds3_slice = get_zslice(batch[gt_lsds].data[0][:3])
+                    gt_lsds3_img = wandb.Image(gt_lsds3_slice)
+                    pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
+                    pred_lsds3_img = wandb.Image(pred_lsds3_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/gt_lsds3': gt_lsds3_img,
+                        'training/images/pred_lsds3': pred_lsds3_img,
+                    })
+
+                if hardness_enabled:
+                    pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
+                    pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/pred_hardness': pred_hardness_fig,
+                    })
+
+                if boundaries_enabled:
+                    with torch.inference_mode():
+                        _th_pred_boundaries = torch.as_tensor(batch[pred_boundaries].data[0], dtype=torch.float32)
+                        _np_sm_pred_boundaries = torch.softmax(_th_pred_boundaries, dim=0).numpy().astype(np.float32)[1]
+                    pred_boundaries_slice = get_zslice(_np_sm_pred_boundaries)
+                    pred_boundaries_fig = get_mpl_imshow_fig(pred_boundaries_slice)
+                    # pred_boundaries_fig = wandb.Image(pred_boundaries_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/pred_boundaries': pred_boundaries_fig,
+                    })
 
                 loss_maps = compute_loss_maps(
                     loss_module=loss,
@@ -497,22 +530,28 @@ def train(cfg: DictConfig) -> None:
                     val_pred_seg_img = get_zslice(cevr.arrays['cropped_pred_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_pred_frag_img = get_zslice(cevr.arrays['cropped_pred_frag'], as_wandb=True, enable_rgb_labels=True)
                     val_pred_affs_img = get_zslice(cevr.arrays['cropped_pred_affs'], as_wandb=True)
-                    val_pred_lsds3_img = get_zslice(cevr.arrays['cropped_pred_lsds'][:3], as_wandb=True)
-                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
-                    val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
+                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
+
+                    val_imgs_wandb = {
+                        'validation/images/raw': val_raw_img,
+                        'validation/images/pred_seg': val_pred_seg_img,
+                        'validation/images/pred_frag': val_pred_frag_img,
+                        'validation/images/pred_affs': val_pred_affs_img,
+                        'validation/images/gt_seg': val_gt_seg_img,
+                        'validation/images/gt_affs': val_gt_affs_img,
+                    }
+
+                    if lsd_enabled:
+                        val_pred_lsds3_img = get_zslice(cevr.arrays['cropped_pred_lsds'][:3], as_wandb=True)
+                        val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
+                        val_imgs_wandb.update({
+                            'validation/images/pred_lsds3': val_pred_lsds3_img,
+                            'validation/images/gt_lsds3': val_gt_lsds3_img,
+                        })
 
                     wandb.log(
-                        {
-                            'validation/images/raw': val_raw_img,
-                            'validation/images/pred_seg': val_pred_seg_img,
-                            'validation/images/pred_frag': val_pred_frag_img,
-                            'validation/images/pred_affs': val_pred_affs_img,
-                            'validation/images/pred_lsds3': val_pred_lsds3_img,
-                            'validation/images/gt_seg': val_gt_seg_img,
-                            'validation/images/gt_affs': val_gt_affs_img,
-                            'validation/images/gt_lsds3': val_gt_lsds3_img,
-                        },
+                        val_imgs_wandb,
                         step=batch.iteration,
                         commit=False
                     )
