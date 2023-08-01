@@ -75,7 +75,6 @@ def predict(
 ):
     output_names = list(output_cfg.keys())
 
-
     raw = gp.ArrayKey("RAW")
     output_arrkeys = {k: gp.ArrayKey(k.upper()) for k in output_names}
 

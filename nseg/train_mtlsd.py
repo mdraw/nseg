@@ -1,6 +1,13 @@
 # Based on https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/train_mtlsd.ipynb
 
 import os
+
+# Make sure we're not multithreading because we already use one process per CPU core in training
+#  See https://stackoverflow.com/a/53224849
+for lib in ['OMP', 'OPENBLAS', 'MKL', 'NUMEXPR', 'VECLIB']:
+    os.environ[f'{lib}_NUM_THREADS'] = '1'
+
+
 import logging
 import time
 from pathlib import Path
@@ -149,8 +156,8 @@ def train(cfg: DictConfig) -> None:
     output_shape = input_shape - offset
     output_size = output_shape * voxel_size
 
-    # model = get_mtlsdmodel()
-    model = build_mtlsdmodel(cfg.model)
+    model_cfg = cfg.model
+    model = build_mtlsdmodel(model_cfg)
     example_input = torch.randn(
         1,  # cfg.training.batch_size,
         1,  # cfg.model.backbone.init_kwargs.in_channels,
@@ -167,6 +174,9 @@ def train(cfg: DictConfig) -> None:
 
     request = gp.BatchRequest()
     request.add(raw, input_size)
+
+
+
     request.add(labels, output_size)
     request.add(gt_lsds, output_size)
     request.add(lsds_weights, output_size)
@@ -299,33 +309,35 @@ def train(cfg: DictConfig) -> None:
 
     # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
 
+    trainer_inputs = {'input': raw}
+    trainer_outputs = {
+        'pred_lsds': pred_lsds,
+        'pred_affs': pred_affs,
+        'pred_boundaries': pred_boundaries,
+        'pred_hardness': pred_hardness,
+    }
+    trainer_loss_inputs = {
+        'pred_lsds': pred_lsds,
+        'gt_lsds': gt_lsds,
+        'lsds_weights': lsds_weights,
+        'pred_affs': pred_affs,
+        'gt_affs': gt_affs,
+        'affs_weights': affs_weights,
+        'pred_hardness': pred_hardness,
+        'pred_boundaries': pred_boundaries,
+        'gt_boundaries': gt_boundaries,
+    }
+
     save_every = cfg.training.save_every
     trainer = Train(
         model,
         loss,
         optimizer,
-        inputs={
-            'input': raw
-        },
-        outputs={
-            0: pred_lsds,
-            1: pred_affs,
-            2: pred_boundaries,
-            3: pred_hardness,
-        },
-        loss_inputs={
-            0: pred_lsds,
-            1: gt_lsds,
-            2: lsds_weights,
-            3: pred_affs,
-            4: gt_affs,
-            5: affs_weights,
-            6: pred_hardness,
-            7: pred_boundaries,
-            8: gt_boundaries,
-        },
+        inputs=trainer_inputs,
+        outputs=trainer_outputs,
+        loss_inputs=trainer_loss_inputs,
         # log_dir = "./logs/"
-        save_every=save_every,  # todo: increase,
+        save_every=save_every,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
         enable_amp=cfg.training.enable_amp,
@@ -338,7 +350,6 @@ def train(cfg: DictConfig) -> None:
     pipeline += trainer
 
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
-
 
     # pipeline += gp.PrintProfilingStats(every=10)
 

@@ -9,7 +9,9 @@ dependencies:
   - cython >=0.29 # needed as a build requirement for some dependencies that don't declare "build_requires" fields
   - numba >=0.45 # needs to be installed for elektronn3 because of LLVM dependency that pip can't handle
   - numpy >=1.24
-  - boost >=1.79
+  - boost >=1.78
+
+#  - blas=*=*mkl  # uncomment to use Intel MKL BLAS implementation instead of OpenBLAS
 
   - pytorch >=2.0,<2.1
   - torchvision >=0.15
@@ -21,8 +23,8 @@ dependencies:
   - graph-tool=2.57  # For funlib.evaluate split_graph() implementation
 
   # Only needed on database host, can be installed in a different env in case of conflict
-  - mongodb=6.0  # may cause mamba dep conflict
-  - mongo-tools=100.7
+#  - mongodb=6.0  # may cause mamba dep conflict
+#  - mongo-tools=100.7
 
   - mahotas
   - zarr >=2.15

@@ -137,6 +137,7 @@ class Train(GenericTrain):
         enable_dynamo: bool = False,
         save_jit: str = 'script',
         example_input: Optional[torch.Tensor] = None,
+        enable_hooks: bool = False,
         cfg: Optional[DictConfig] = None,
     ):
 
@@ -182,7 +183,8 @@ class Train(GenericTrain):
                 logger.warning("log_dir given, but tensorboardX is not installed")
 
         self.intermediate_layers = {}
-        self.register_hooks()
+        if enable_hooks:
+            self.register_hooks()
 
     def register_hooks(self):
         for key in self.outputs:
@@ -312,6 +314,9 @@ class Train(GenericTrain):
             model_outputs = self.active_model(**device_inputs)
             if isinstance(model_outputs, tuple):
                 outputs = {i: model_outputs[i] for i in range(len(model_outputs))}
+            elif isinstance(model_outputs, dict):
+                # outputs = {k: v for k, v in model_outputs.items() if k in requested_outputs}
+                outputs = model_outputs
             elif isinstance(model_outputs, torch.Tensor):
                 outputs = {0: model_outputs}
             else:

@@ -8,6 +8,7 @@ import gunpowder as gp
 from elektronn3.models import unet as e3unet
 
 from nseg import funlib_unet
+from nseg.conf import NConf, DictConfig
 
 
 # _default_loss_term_weights = {
@@ -179,15 +180,16 @@ class HardnessEnhancedLoss(torch.nn.Module):
             bce_loss_map = self._apply_hardness_weighting(bce_loss_map, pred_hardness)
             seg_loss_maps['bce'] = bce_loss_map
 
-        for k, v in seg_loss_maps.items():
-            print(f'{k}: {v.shape}')
+        # for k, v in seg_loss_maps.items():
+        #     print(f'{k}: {v.shape}')
         return seg_loss_maps
 
-    def _combine_seg_loss_maps(self, seg_loss_maps: dict[str, torch.Tensor]) -> torch.Tensor:
+    def _combine_seg_loss_maps(self, seg_loss_maps: dict[str, torch.Tensor], exclude: Optional[Sequence[str]] = None) -> torch.Tensor:
         combined_seg_loss_map = 0.
         for loss_name, loss_map in seg_loss_maps.items():
-            weight = self.loss_term_weights[loss_name]
-            combined_seg_loss_map += weight * loss_map
+            if exclude is None or loss_name not in exclude:
+                weight = self.loss_term_weights[loss_name]
+                combined_seg_loss_map += weight * loss_map
         return combined_seg_loss_map
 
 
@@ -215,13 +217,22 @@ class HardnessEnhancedLoss(torch.nn.Module):
             gt_boundaries=gt_boundaries,
         )
         total_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps)
-        hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
 
-        total_loss_map = total_seg_loss_map + hardness_loss_map
-        mask = self._compute_mask(lsds_weights, affs_weights)
-        masked_total_loss = self._apply_mask(total_loss_map, mask)
+        # Disregard LSD because of masking issues
+        total_hardness_relevant_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps, exclude=['lsd'])
 
-        total_loss_scalar = torch.mean(masked_total_loss)
+        # hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
+        hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_hardness_relevant_seg_loss_map)
+
+        enable_oob_masking = False
+        if enable_oob_masking:
+            total_loss_map = total_seg_loss_map + hardness_loss_map
+            mask = self._compute_mask(lsds_weights, affs_weights)
+            masked_total_loss = self._apply_mask(total_loss_map, mask)
+            total_loss_scalar = torch.mean(masked_total_loss)
+        else:
+            total_loss_map = total_seg_loss_map + hardness_loss_map
+            total_loss_scalar = torch.mean(total_loss_map)
         return total_loss_scalar
 
 
@@ -334,21 +345,22 @@ def get_mtlsdmodel(padding='valid'):  # todo: also use advanced architectures
     return model
 
 
+# TODO: Don't use constant upsampling
 def get_funlib_unet(
         in_channels=1,
         num_fmaps=14,
         num_fmaps_out=None,
         fmap_inc_factor=5,
-        num_ds=2,
-        constant_upsample = True,
+        ds_fact=((2, 2, 2), (2, 2, 2)),
+        # ds_fact=((1, 3, 3), (1, 3, 3), (3, 3, 3)),
+        constant_upsample=True,
         padding='valid',
         enable_batch_norm=False,
         **kwargs
 ):
     """Construct a funlib U-Net model as used in the LSD paper. Defaults to the paper's architecture config."""
 
-    ds_fact=((2, 2, 2), (2, 2, 2))
-    ds_fact = tuple([(2, 2, 2)] * num_ds)
+    ds_fact = [tuple(f) for f in ds_fact]  # Tuples (not lists) are needed for down/up-sampling
     num_levels = len(ds_fact) + 1
     ksd = [[(3, 3, 3), (3, 3, 3)]] * num_levels
     ksu = [[(3, 3, 3), (3, 3, 3)]] * (num_levels - 1)
@@ -605,6 +617,8 @@ def finalize_hardness(
 def build_mtlsdmodel(model_cfg):
     backbone_class = import_symbol(model_cfg.backbone.model_class)
     bb_init_kwargs = model_cfg.backbone.get('init_kwargs', {})
+    if isinstance(bb_init_kwargs, DictConfig):
+        bb_init_kwargs = NConf.to_container(bb_init_kwargs, resolve=True, throw_on_missing=True)
     backbone = backbone_class(**bb_init_kwargs)
 
     finalize_hardness_kwargs = model_cfg.get('finalize_hardness_kwargs', {})
@@ -684,7 +698,16 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         pre_hardness = self.hardness_fc(pre_hardness)
         hardness = finalize_hardness(pre_hardness, **self.finalize_hardness_kwargs)
 
-        return lsds, affs, boundaries, hardness
+        model_outputs = {
+            'pred_lsds': lsds,
+            'pred_affs': affs,
+            'pred_boundaries': boundaries,
+            'pred_hardness': hardness,
+        }
+
+        return model_outputs
+
+        # return lsds, affs, boundaries, hardness
 
 # class GeneralMtlsdModel(torch.nn.Module):
 

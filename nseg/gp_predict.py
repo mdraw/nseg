@@ -75,6 +75,7 @@ class Predict(GenericPredict):
         spawn_subprocess: bool = False,
         float16: bool = False,
         enable_cudnn_benchmark: bool = True,
+        enable_hooks: bool = False,
     ):
 
         self.array_specs = array_specs if array_specs is not None else {}
@@ -99,11 +100,13 @@ class Predict(GenericPredict):
         self.model = model
         self.checkpoint = checkpoint
         self.float16 = float16
+        self.enable_hooks = enable_hooks
 
         self._inference_dtype = torch.float16 if self.float16 else torch.float32
         self._output_dtype = torch.float32
         self.intermediate_layers = {}
-        self.register_hooks()
+        if enable_hooks:
+            self.register_hooks()
 
     def start(self):
 
@@ -179,12 +182,17 @@ class Predict(GenericPredict):
         outputs = {}
         if isinstance(module_out, tuple):
             module_outs = module_out
+        elif isinstance(module_out, dict):
+            module_outs = module_out
         else:
             module_outs = (module_out,)
         for key, value in self.outputs.items():
             if value in request:
                 if isinstance(key, str):
-                    outputs[value] = self.intermediate_layers[key]
+                    if self.enable_hooks:
+                        outputs[value] = self.intermediate_layers[key]
+                    else:
+                        outputs[value] = module_outs[key]
                 elif isinstance(key, int):
                     outputs[value] = module_outs[key]
         return outputs

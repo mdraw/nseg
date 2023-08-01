@@ -23,7 +23,7 @@ from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, HardnessE
 from nseg.gp_predict import Predict
 from nseg.gp_sources import ZarrSource
 from nseg.gp_scan import Scan
-from nseg.gp_boundaries import ArgMax
+from nseg.gp_boundaries import ArgMax, SoftMax, Take
 
 from nseg.conf import NConf, DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
@@ -348,6 +348,10 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     """Run scan inference on unlabeled data (or labeled data where labels should not be used).
     Directly returns the outputs as numpy arrays."""
 
+    output_cfg = cfg.eval.output_cfg
+
+    output_names = list(output_cfg.keys())
+
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
     # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
     input_shape = gp.Coordinate(
@@ -359,16 +363,13 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     output_size = output_shape * voxel_size
 
     raw = gp.ArrayKey('RAW')
-    pred_lsds = gp.ArrayKey('PRED_LSDS')
-    pred_affs = gp.ArrayKey('PRED_AFFS')
-    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
+    output_arrkeys = {k: gp.ArrayKey(k.upper()) for k in output_names}
 
     scan_request = gp.BatchRequest()
-
     scan_request.add(raw, input_size)
-    scan_request.add(pred_lsds, output_size)
-    scan_request.add(pred_affs, output_size)
-    scan_request.add(pred_hardness, output_size)
+
+    for arrkey in output_arrkeys.values():
+        scan_request.add(arrkey, output_size)
 
     # labels = gp.ArrayKey('LABELS')
     # scan_request.add(labels, output_size)
@@ -387,8 +388,8 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
 
     source = ZarrSource(
         str(raw_path),
-        source_data_dict,
-        source_array_specs,
+        datasets=source_data_dict,
+        array_specs=source_array_specs,
     )
 
     source += gp.Unsqueeze([raw])
@@ -426,6 +427,9 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     if checkpoint_path is None:  # Fall back to cfg checkpoint
         checkpoint_path = cfg.eval.checkpoint
 
+    # _predict_outputs = {output_cfg[n]['idx']: output_arrkeys[n] for n in output_names}
+    _predict_outputs = {n: output_arrkeys[n] for n in output_names}
+
     # add a predict node
     predict = Predict(
         model=model,
@@ -433,11 +437,7 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
         inputs={
             'input': raw
         },
-        outputs={
-            0: pred_lsds,
-            1: pred_affs,
-            2: pred_hardness
-        }
+        outputs=_predict_outputs,
     )
 
     # this will scan in chunks equal to the input/output sizes of the respective arrays
@@ -449,23 +449,47 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     pipeline += gp.Stack(1)
 
     pipeline += predict
+
+    if 'pred_boundaries' in output_names:
+        boundary_arrkey = output_arrkeys['pred_boundaries']
+        # pipeline += ArgMax(boundaries)
+        pipeline += SoftMax(boundary_arrkey)
+        pipeline += Take(boundary_arrkey, 1, 1)  # Take channel 1
+
+    outputs_to_squeeze = [
+        output_arrkeys[k]
+        for k, v in output_cfg.items()
+        if v['squeeze']
+    ]
+    pipeline += gp.Squeeze([
+        raw,
+        *outputs_to_squeeze
+    ])
+
     pipeline += scan
-    pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
 
     predict_request = gp.BatchRequest()
 
     # this lets us know to process the full image. we will scan over it until it is done
     predict_request.add(raw, total_input_roi.get_end())
-    predict_request.add(pred_lsds, total_output_roi.get_end())
-    predict_request.add(pred_affs, total_output_roi.get_end())
-    predict_request.add(pred_hardness, total_output_roi.get_end())
+    for arrkey in output_arrkeys.values():
+        predict_request.add(arrkey, total_output_roi.get_end())
 
+    # predict_request.add(pred_lsds, total_output_roi.get_end())
+    # predict_request.add(pred_affs, total_output_roi.get_end())
+    # predict_request.add(pred_hardness, total_output_roi.get_end())
     # predict_request.add(labels, total_output_roi.get_end())
 
     with gp.build(pipeline):
         batch = pipeline.request_batch(predict_request)
 
-    return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data, batch[pred_hardness].data  #, batch[labels].data
+    batch_ret = {'raw': batch[raw].data}
+    for output_name, arrkey in output_arrkeys.items():
+        batch_ret[output_name] = batch[arrkey].data
+
+    return batch_ret
+
+    # return batch[raw].data, batch[pred_lsds].data, batch[pred_affs].data, batch[pred_boundaries].data batch[pred_hardness].data  #, batch[labels].data
 
 
 def watershed_from_boundary_distance(
@@ -725,15 +749,17 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
 
 def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
     # raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    raw_path = '/cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr'
-    predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    exit()
+    batch = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # raw_path = '/cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr'
+    # predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # exit()
     ## Uncomment when predict_labeled works
     # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # raw = batch['raw']
-    # pred_lsds = batch['pred_lsds']
-    # pred_affs = batch['pred_affs']
-    # pred_hardness = batch['pred_hardness']
+    raw = batch['raw']
+    pred_lsds = batch['pred_lsds']
+    pred_affs = batch['pred_affs']
+    pred_boundaries = batch['pred_boundaries']
+    pred_hardness = batch['pred_hardness']
 
 
     data = zarr.open(str(raw_path), 'r')
@@ -781,7 +807,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         # hardness_prediction=torch.as_tensor(cropped_pred_hardness),
     ).item()
 
-    logging.info(f'Eval loss: {eval_loss:.3f}')
+    logging.info(f'Eval loss (hardcoded MSE): {eval_loss:.3f}')
 
     # print(f'{pred_affs.shape=}, {ws_affs.shape=}')
 
