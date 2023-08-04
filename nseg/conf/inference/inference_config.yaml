@@ -17,18 +17,35 @@ v: v1
 hydra:
   run:
     # Where to write logs and config copies
-    # dir: ${path_prefix}/${v}/${setup}/${hydra.job.name}/${timestamp}_${shortname}
-    dir: ${path_prefix}/${v}/inference/${setup}/${hydra.job.name}
+     dir: ${path_prefix}/${v}/${setup}/${hydra.job.name}/${timestamp}_${shortname}
+#    dir: ${path_prefix}/${v}/inference/${setup}/${hydra.job.name}
 
 setup: crunchy1
 
 
+meta:
+  jobs_to_run:
+    - i1
+    - i2
+    - i3
+    - i4
+    - i5
+    - i6
+  run_i456_locally: false
+#  run_i456_locally: true
+  compute_node_slurm_options: ["--ntasks=1", "--time=7-0", "--mem=1000G", "--cpus-per-task=64", "--job-name=i456"]
+  submitit_i456_options:
+    name: i456
+    mem_gb: 1000
+    cpus_per_task: 64
+    timeout_min: 10080  # 7 days
+
 common:
-  roi: 18_micron
+  roi: 11_micron
   experiment: zebrafinch
   setup: ${setup}
   db_host: cajalg001
-  db_name: zf_crunchy18a
+  db_name: zf_crunchy11q
 
   voxel_size: [20, 9, 9]
   block_size: [3600, 3600, 3600]
@@ -49,7 +66,7 @@ common:
 
   raw_dataset: volumes/raw
   mask_dataset: volumes/neuropil_mask
-  affs_dataset: /volumes/affs
+  affs_dataset: /volumes/pred_affs
   fragments_dataset: /volumes/fragments
   seg_dataset: volumes/segmentation_40  # TODO
 
@@ -59,20 +76,21 @@ common:
 
 
 i1_predict:
-  model_path: /cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-02_23-35_unary-tree_u3_lsd/model_checkpoint_23000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=24", "--gres=gpu:1", "--job-name=ns01pr"]
 
   # net_input_shape: [84, 268, 268]
   net_input_shape: [96, 484, 484]
-  net_offset: [40, 40, 40]
+#  net_offset: [40, 40, 40]
+  net_offset: [36, 212, 212]
 
   output_cfg:
-    lsds:       {idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
-    affs:       {idx: 1, out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
-    boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
-    hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   0.5}
+    pred_affs:       {idx: 1, out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_lsds:       {idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   0.5}
 
 
 i2_extract_fragments:
@@ -92,7 +110,8 @@ i3_agglomerate:
 i4_find_segments:
   num_workers: 32
   thresholds_minmax: [0, 1]
-  thresholds_step: 0.02
+#  thresholds_step: 0.02
+  thresholds_step: 0.1
 
 i5_extract_segmentation:
   num_workers: 64
@@ -104,7 +123,8 @@ i6_evaluate_annotations:
   edges_db_name: ${common.db_name}
   scores_db_name: scores_${common.db_name}
   annotations_db_host: ${common.db_host}
-  annotations_db_name: annotations
+#  annotations_db_name: val_annotations  # validation set
+  annotations_db_name: annotations  # test set
   annotations_skeletons_collection_name: zebrafinch
   node_components: zebrafinch_components
   node_mask: zebrafinch_mask

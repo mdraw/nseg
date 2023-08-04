@@ -266,7 +266,7 @@ def train(cfg: DictConfig) -> None:
             src += gp.Pad(labels_mask, labels_padding)
         if cfg.dataset.enable_mask:
             # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine. TODO: get ratio from cfg.dataset
-            src += gp.RandomLocation(min_masked=0.3, mask=labels_mask)
+            src += gp.RandomLocation(min_masked=0.5, mask=labels_mask)
         else:
             src += gp.RandomLocation()
         sources.append(src)
@@ -278,16 +278,15 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.RandomProvider()
 
-    # pipeline += gp.ElasticAugment(
-    #     control_point_spacing=[4, 4, 10],
-    #     jitter_sigma=[0, 2, 2],
-    #     # rotation_interval=[0, np.pi / 2.0],
-    #     rotation_interval=[-np.pi / 16.0, np.pi / 16.0],  # Smaller rotation interval so we don't need as much space for rotation
-    #     prob_slip=0.05,
-    #     prob_shift=0.05,
-    #     max_misalign=10,
-    #     subsample=2,
-    # )
+    pipeline += gp.ElasticAugment(
+        control_point_spacing=[4, 4, 10],
+        jitter_sigma=[0, 2, 2],
+        rotation_interval=[0, np.pi / 2.0],
+        prob_slip=0.05,
+        prob_shift=0.05,
+        max_misalign=10,
+        subsample=8,
+    )
 
     pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
 

@@ -311,11 +311,11 @@ def main(cfg: DictConfig) -> None:
     dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i1_predict'])
 
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
+    dict_cfg['_hydra_run_dir'] = _hydra_run_dir
     logging.info(f'Hydra run dir: {_hydra_run_dir}')
     logging.info(f'Config: {dict_cfg}')
 
     predict_blockwise(**dict_cfg)
-
 
     end = time.time()
 

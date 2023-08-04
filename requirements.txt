@@ -22,6 +22,8 @@ moviepy>=1.0.2,<2.0
 setuptools>=67.6
 tqdm>=4.65
 typing_extensions>=4.5
+submitit>=1.4.5
+zstandard >=0.19
 # napari # TODO: constrain
 
 randomname

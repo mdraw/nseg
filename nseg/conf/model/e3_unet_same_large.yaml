@@ -5,13 +5,13 @@ num_affs: 3
 
 backbone:
   model_class: elektronn3.models.resunet.UNet
-  num_fmaps: 14
+  num_fmaps_out: 14
   offset: [0, 0, 0]
   inp_shape: [96, 96, 96]
   ev_inp_shape: [128, 256, 256]
   init_kwargs:
     in_channels: 1
-    out_channels: ${..num_fmaps}
+    out_channels: ${..num_fmaps_out}
     # planar_blocks: [0,]
     # enc_res_blocks: 2
     start_filts: 64

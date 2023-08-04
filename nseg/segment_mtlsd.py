@@ -756,10 +756,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     ## Uncomment when predict_labeled works
     # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
     raw = batch['raw']
-    pred_lsds = batch['pred_lsds']
     pred_affs = batch['pred_affs']
-    pred_boundaries = batch['pred_boundaries']
-    pred_hardness = batch['pred_hardness']
 
 
     data = zarr.open(str(raw_path), 'r')
@@ -784,9 +781,18 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         downsample=lsd_downsample,
     )
 
+    pred_lsds = batch.get('pred_lsds')
+    pred_boundaries = batch.get('pred_boundaries')
+    pred_hardness = batch.get('pred_hardness')
+
+    cropped_raw, _ = center_crop(raw, gt_seg)
+
     cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
 
-    cropped_pred_hardness, _ = center_crop(pred_hardness, gt_seg)
+    if pred_hardness is None:
+        cropped_pred_hardness = None
+    else:
+        cropped_pred_hardness, _ = center_crop(pred_hardness, gt_seg)
 
     # TODO: These weights are actually different during training - see gp.BalanceLabels
     lsds_weights = 1.
@@ -839,7 +845,6 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
 
     cropped_pred_frag, _ = center_crop(pred_frag, gt_seg)
     cropped_pred_seg, _ = center_crop(pred_seg, gt_seg)
-    cropped_raw, _ = center_crop(raw, gt_seg)
 
     rand_voi_report = rand_voi(
         gt_seg,
@@ -851,24 +856,27 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
 
     rand_voi_report['loss'] = eval_loss
 
+    result_arrays = dict(
+        raw=raw,
+        pred_affs=pred_affs,
+        pred_lsds=pred_lsds,
+        pred_seg=pred_seg,
+        pred_frag=pred_frag,
+        cropped_raw=cropped_raw,
+        cropped_pred_affs=cropped_pred_affs,
+        cropped_pred_lsds=cropped_pred_lsds,
+        cropped_pred_seg=cropped_pred_seg,
+        cropped_pred_frag=cropped_pred_frag,
+        cropped_pred_hardness=cropped_pred_hardness,
+        gt_seg=gt_seg,
+        gt_affs=gt_affs,
+        gt_lsds=gt_lsds,
+    )
+    result_arrays = {k: v for k, v in result_arrays.items() if v is not None}
+
     eval_result = CubeEvalResult(
         report=rand_voi_report,
-        arrays=dict(
-            raw=raw,
-            pred_affs=pred_affs,
-            pred_lsds=pred_lsds,
-            pred_seg=pred_seg,
-            pred_frag=pred_frag,
-            cropped_raw=cropped_raw,
-            cropped_pred_affs=cropped_pred_affs,
-            cropped_pred_lsds=cropped_pred_lsds,
-            cropped_pred_seg=cropped_pred_seg,
-            cropped_pred_frag=cropped_pred_frag,
-            cropped_pred_hardness=cropped_pred_hardness,
-            gt_seg=gt_seg,
-            gt_affs=gt_affs,
-            gt_lsds=gt_lsds,
-        )
+        arrays=result_arrays,
     )
 
     result_zarr_root = cfg.eval.result_zarr_root

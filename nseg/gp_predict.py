@@ -192,7 +192,8 @@ class Predict(GenericPredict):
                     if self.enable_hooks:
                         outputs[value] = self.intermediate_layers[key]
                     else:
-                        outputs[value] = module_outs[key]
+                        if module_outs.get(key) is not None:
+                            outputs[value] = module_outs[key]
                 elif isinstance(key, int):
                     outputs[value] = module_outs[key]
         return outputs

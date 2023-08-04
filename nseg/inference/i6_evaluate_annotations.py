@@ -768,8 +768,11 @@ class EvaluateAnnotations():
             np.array([[site_segment_ids]]),
             return_cluster_scores=return_cluster_scores)
 
+        rand_voi_report['voi_sum'] = rand_voi_report['voi_split'] + rand_voi_report['voi_merge']
+
         logging.info(f"VOI split: {rand_voi_report['voi_split']}")
         logging.info(f"VOI merge: {rand_voi_report['voi_merge']}")
+        logging.info(f"VOI sum: {rand_voi_report['voi_sum']}")
 
         return rand_voi_report
 
@@ -835,6 +838,7 @@ class EvaluateAnnotations():
         if self.annotations_synapses_collection_name:
             report['synapse_voi_split'] = synapse_rand_voi_report['voi_split']
             report['synapse_voi_merge'] = synapse_rand_voi_report['voi_merge']
+            report['synapse_voi_sum'] = synapse_rand_voi_report['voi_split'] + synapse_rand_voi_report['voi_merge']
 
         report['expected_run_length'] = erl
         report['max_erl'] = max_erl

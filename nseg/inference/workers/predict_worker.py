@@ -110,7 +110,8 @@ def predict(
     # TODO: Clear up model_path vs. checkpoint path use - support both? See segment_mtlsd.py
     checkpoint_path = None
 
-    _predict_outputs = {output_cfg[n]['idx']: output_arrkeys[n] for n in output_names}
+    # _predict_outputs = {output_cfg[n]['idx']: output_arrkeys[n] for n in output_names}
+    _predict_outputs = {n: output_arrkeys[n] for n in output_names}
 
     pipeline += Predict(
         model=model,

@@ -648,22 +648,22 @@ def build_mtlsdmodel(model_cfg):
     # hardness_head = hardness_head_class(**hh_init_kwargs)
 
     lsd_fc = nn.Sequential(
-        nn.Conv3d(model_cfg.backbone.num_fmaps, 10, 1),
+        nn.Conv3d(model_cfg.backbone.num_fmaps_out, 10, 1),
         nn.Sigmoid()
     )
 
     aff_fc = nn.Sequential(
-        nn.Conv3d(model_cfg.backbone.num_fmaps, 3, 1),
+        nn.Conv3d(model_cfg.backbone.num_fmaps_out, 3, 1),
         nn.Sigmoid()
     )
 
     hardness_fc = nn.Sequential(
-        nn.Conv3d(model_cfg.backbone.num_fmaps, 1, 1),
+        nn.Conv3d(model_cfg.backbone.num_fmaps_out, 1, 1),
         # nn.Sigmoid()  # sigmoid is already applied in finalize_hardness afterwards!
     )
 
     boundary_fc = nn.Sequential(
-        nn.Conv3d(model_cfg.backbone.num_fmaps, 2, 1),
+        nn.Conv3d(model_cfg.backbone.num_fmaps_out, 2, 1),
         # nn.Softmax()  # softmax is integrated in nn.CrossEntropyLoss
     )
 

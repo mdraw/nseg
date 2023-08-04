@@ -1,6 +1,6 @@
 # Tell hydra how to construct the config from sub confs by default
 defaults:
-  - model: hl_funlib_unet
+  - model: hl_unet
   - loss: hl
   - dataset: j0126_2val
   - data_prep: default
@@ -51,7 +51,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg_hl4
+    project: nseg_hl5
     name: ${shortname}
     tags:
       - mtlsd
@@ -104,16 +104,16 @@ training:
 #  batch_size: 8
 #  lr: 4.0e-4
 
-  # batch_size: 16
-  # lr: 1.0e-3
+#  batch_size: 16
+#  lr: 1.0e-3
 
   save_jit: null
 
 
 # TODO: eval subconfigs (default - testing; default - validation; agglo thresh sweep - validation)
 eval:
-#  max_eval_cubes: null  # Don't limit eval cubes (default)
-  max_eval_cubes: 1  # Only do eval on first cube, skip others
+  max_eval_cubes: null  # Don't limit eval cubes (default)
+#  max_eval_cubes: 1  # Only do eval on first cube, skip others
   cube_root: ${dataset.val_root}
   # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_14800.pth
   # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-19_17-41_andante-story_andmask_mse_w0.5/model_checkpoint_7000.pt
@@ -132,8 +132,9 @@ eval:
   # threshold: 0.043
 
   output_cfg:
-    pred_lsds: { idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
     pred_affs: { idx: 1, out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_lsds: { idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
+    # TODO: More concise output cfg
     pred_boundaries: { idx: 2, out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
     pred_hardness: { idx: 3, out_dims: 1, out_dtype: float32, squeeze: true, scale: 0.5 }
 

@@ -184,7 +184,9 @@ def get_connected_components(
 
     out_file = os.path.join(out_dir, lookup)
 
+    _t0 = time.time()
     np.savez_compressed(out_file, fragment_segment_lut=lut)
+    logging.info(f"np.savez_compressed took {(time.time() - _t0) * 1000} ms")
 
     return 0  # return 0 to indicate success
 

@@ -298,7 +298,6 @@ def check_block(blocks_extracted, block):
 @hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
-
     start = time.time()
 
     dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -306,8 +305,8 @@ def main(cfg: DictConfig) -> None:
     dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i2_extract_fragments'])
 
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
-    logging.info(f'Hydra run dir: {_hydra_run_dir}')
     dict_cfg['_hydra_run_dir'] = _hydra_run_dir
+    logging.info(f'Hydra run dir: {_hydra_run_dir}')
     logging.info(f'Config: {dict_cfg}')
 
     extract_fragments(**dict_cfg)

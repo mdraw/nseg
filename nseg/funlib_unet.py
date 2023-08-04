@@ -113,7 +113,8 @@ class Upsample(torch.nn.Module):
             in_channels=None,
             out_channels=None,
             crop_factor=None,
-            next_conv_kernel_sizes=None):
+            next_conv_kernel_sizes=None,
+            enable_pre_cropping=False):
 
         super(Upsample, self).__init__()
 
@@ -122,6 +123,7 @@ class Upsample(torch.nn.Module):
 
         self.crop_factor = crop_factor
         self.next_conv_kernel_sizes = next_conv_kernel_sizes
+        self.enable_pre_cropping = enable_pre_cropping
 
         self.dims = len(scale_factor)
 
@@ -221,7 +223,7 @@ class Upsample(torch.nn.Module):
 
         g_up = self.up(g_out)
 
-        if self.next_conv_kernel_sizes is not None:
+        if self.enable_pre_cropping and self.next_conv_kernel_sizes is not None:
             g_cropped = self.crop_to_factor(
                 g_up,
                 self.crop_factor,
@@ -252,6 +254,7 @@ class UNet(torch.nn.Module):
             constant_upsample=False,
             padding='valid',
             enable_batch_norm=False,
+            enable_pre_cropping=False,
             active_head_ids: Optional[Sequence[int]] = None,
             detached_head_ids: Optional[Sequence[int]] = None,
     ):
@@ -371,6 +374,7 @@ class UNet(torch.nn.Module):
         self.in_channels = in_channels
         self.out_channels = num_fmaps_out if num_fmaps_out else num_fmaps
         self.enable_batch_norm = enable_batch_norm
+        self.enable_pre_cropping = enable_pre_cropping
 
         self.active_head_ids = range(self.num_heads) if active_head_ids is None else active_head_ids
         self.detached_head_ids = range(self.num_heads) if detached_head_ids is None else detached_head_ids
@@ -428,7 +432,8 @@ class UNet(torch.nn.Module):
                     in_channels=num_fmaps*fmap_inc_factor**(level + 1),
                     out_channels=num_fmaps*fmap_inc_factor**(level + 1),
                     crop_factor=crop_factors[level],
-                    next_conv_kernel_sizes=kernel_size_up[level])
+                    next_conv_kernel_sizes=kernel_size_up[level],
+                    enable_pre_cropping=self.enable_pre_cropping)
                 for level in range(self.num_levels - 1)
             ])
             for _ in range(num_heads)

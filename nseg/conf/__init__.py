@@ -12,7 +12,8 @@ from omegaconf import OmegaConf, DictConfig
 
 T = TypeVar('T')
 
-def unwind_dict(cfg_dict: dict[str, T], keys: Sequence[str], init_empty: bool = True) -> dict[str, T]:
+
+def unwind_dict(cfg_dict: dict[str, T], keys: Sequence[str], init_empty: bool = False) -> dict[str, T]:
     cfg_dict = cfg_dict.copy()  # Avoid side effects on original dict
     unw = {} if init_empty else cfg_dict
     for key in keys:
