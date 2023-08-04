@@ -4,6 +4,7 @@
 # - (WIP) Add types for torchscript compiler
 
 import math
+from typing import Optional, Sequence
 import torch
 import torch.nn as nn
 
@@ -112,7 +113,8 @@ class Upsample(torch.nn.Module):
             in_channels=None,
             out_channels=None,
             crop_factor=None,
-            next_conv_kernel_sizes=None):
+            next_conv_kernel_sizes=None,
+            enable_pre_cropping=False):
 
         super(Upsample, self).__init__()
 
@@ -121,6 +123,7 @@ class Upsample(torch.nn.Module):
 
         self.crop_factor = crop_factor
         self.next_conv_kernel_sizes = next_conv_kernel_sizes
+        self.enable_pre_cropping = enable_pre_cropping
 
         self.dims = len(scale_factor)
 
@@ -220,7 +223,7 @@ class Upsample(torch.nn.Module):
 
         g_up = self.up(g_out)
 
-        if self.next_conv_kernel_sizes is not None:
+        if self.enable_pre_cropping and self.next_conv_kernel_sizes is not None:
             g_cropped = self.crop_to_factor(
                 g_up,
                 self.crop_factor,
@@ -250,7 +253,11 @@ class UNet(torch.nn.Module):
             num_heads=1,
             constant_upsample=False,
             padding='valid',
-            enable_batch_norm=False):
+            enable_batch_norm=False,
+            enable_pre_cropping=False,
+            active_head_ids: Optional[Sequence[int]] = None,
+            detached_head_ids: Optional[Sequence[int]] = None,
+    ):
         '''Create a U-Net::
 
             f_in --> f_left --------------------------->> f_right--> f_out
@@ -344,6 +351,20 @@ class UNet(torch.nn.Module):
             padding (optional):
 
                 How to pad convolutions. Either 'same' or 'valid' (default).
+
+            active_head_ids:
+
+                If `None`, compute and return all head outputs in `forward()`. If this is a
+                Sequence[int], it is used as the index list of the head outputs that are computed and returned.
+                Has no effect if num_heads == 1.
+                Useful if not all heads are always required (as in https://arxiv.org/abs/2305.08462).
+
+            detached_head_ids:
+
+                If `None`, compute all gradients stay attached in `forward()`. If this is a
+                Sequence[int], it is used as the index list of the head outputs
+                that are detached from the encoder pathway.
+                Intended for the hardness learning head of https://arxiv.org/abs/2305.08462.
         '''
 
         super(UNet, self).__init__()
@@ -353,6 +374,11 @@ class UNet(torch.nn.Module):
         self.in_channels = in_channels
         self.out_channels = num_fmaps_out if num_fmaps_out else num_fmaps
         self.enable_batch_norm = enable_batch_norm
+        self.enable_pre_cropping = enable_pre_cropping
+
+        self.active_head_ids = range(self.num_heads) if active_head_ids is None else active_head_ids
+        self.detached_head_ids = range(self.num_heads) if detached_head_ids is None else detached_head_ids
+
 
         # default arguments
 
@@ -406,7 +432,8 @@ class UNet(torch.nn.Module):
                     in_channels=num_fmaps*fmap_inc_factor**(level + 1),
                     out_channels=num_fmaps*fmap_inc_factor**(level + 1),
                     crop_factor=crop_factors[level],
-                    next_conv_kernel_sizes=kernel_size_up[level])
+                    next_conv_kernel_sizes=kernel_size_up[level],
+                    enable_pre_cropping=self.enable_pre_cropping)
                 for level in range(self.num_levels - 1)
             ])
             for _ in range(num_heads)
@@ -441,7 +468,7 @@ class UNet(torch.nn.Module):
         # end of recursion
         if level == 0:
 
-            fs_out = [f_left]*self.num_heads
+            fs_out = [f_left] * len(self.active_head_ids)
 
         else:
 
@@ -451,17 +478,15 @@ class UNet(torch.nn.Module):
             # nested levels
             gs_out = self.rec_forward(level - 1, g_in)
 
-            # up, concat, and crop
-            fs_right = [
-                self.r_up[h][i](f_left, gs_out[h])
-                for h in range(self.num_heads)
-            ]
-
-            # convolve
-            fs_out = [
-                self.r_conv[h][i](fs_right[h])
-                for h in range(self.num_heads)
-            ]
+            fs_right = [None] * len(self.active_head_ids)
+            fs_out = [None] * len(self.active_head_ids)
+            for h in self.active_head_ids:
+                if h in self.detached_head_ids:
+                    f_left = f_left.detach()  # TODO: Should we clone here in addition to detaching?
+                # up, concat, and crop
+                fs_right[h] = self.r_up[h][i](f_left, gs_out[h])
+                # convolve
+                fs_out[h] = self.r_conv[h][i](fs_right[h])
 
         return fs_out
 
@@ -472,4 +497,37 @@ class UNet(torch.nn.Module):
         if self.num_heads == 1:
             return y[0]
 
+        if self.active_head_ids is not None and len(self.active_head_ids) == 1:
+            return y[self.active_head_ids[0]]
+
         return y
+
+    # def rec_encode(self, level, f_in):
+
+    #     # index of level in layer arrays
+    #     i = self.num_levels - level - 1
+
+    #     # convolve
+    #     f_left = self.l_conv[i](f_in)
+
+    #     # end of recursion
+    #     if level == 0:
+
+    #         gs_out = [f_left]*self.num_heads
+
+    #     else:
+
+    #         # down
+    #         g_in = self.l_down[i](f_left)
+
+    #         # nested levels
+    #         gs_out = self.rec_encode(level - 1, g_in)
+
+    #     return gs_out
+
+    # def encode(self, x):
+    #     y = self.rec_encode(self.num_levels - 1, x)
+    #     if self.num_heads == 1:
+    #         return y[0]
+
+    #     return y

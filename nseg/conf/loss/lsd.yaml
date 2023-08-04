@@ -1,0 +1,16 @@
+_name: lsd
+
+loss_class: nseg.shared.HardnessEnhancedLoss
+init_kwargs:
+  enable_hardness_weighting: false
+  enable_oob_masking: false
+  normalize_weights: true
+  hardness_loss_formula: mse
+  loss_term_weights:
+    aff: 1.0
+    lsd: 1.0
+#    bce: 0.5
+#    hardness: 0.01
+
+#    bdc: 0.5  # TODO: boundary dice coefficient loss
+#    bdt: 1.0  # TODO: boundary distance transform loss

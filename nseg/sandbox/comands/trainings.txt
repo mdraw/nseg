@@ -1,0 +1,4 @@
+nseg-train model=hl_funlib_unet loss.init_kwargs.hardness_loss_formula=mse model.finalize_hardness_kwargs.normalization_mode=sum_numel descr=_mse_sum_numel
+nseg-train model=hl_funlib_unet loss.init_kwargs.hardness_loss_formula=mse model.finalize_hardness_kwargs.normalization_mode=batchsum descr=_mse_batchsum
+nseg-train model=hl_funlib_unet loss.init_kwargs.hardness_loss_formula=ohl model.finalize_hardness_kwargs.normalization_mode=sum_numel descr=_ohl_sum_numel
+nseg-train model=hl_funlib_unet loss.init_kwargs.hardness_loss_formula=ohl model.finalize_hardness_kwargs.normalization_mode=batchsum descr=_ohl_batchsum

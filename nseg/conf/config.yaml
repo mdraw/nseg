@@ -1,8 +1,11 @@
 # Tell hydra how to construct the config from sub confs by default
 defaults:
-  - model: funlib_unet
-  - dataset: j0126
+  - model: hl_unet
+  - loss: hl
+  - dataset: j0126_2val
   - data_prep: default
+  - knossos_raw_to_zarr: default
+  - cloudvolume_raw_to_zarr: default
   - _self_
 
 # Common path prefix
@@ -39,8 +42,8 @@ labels:
   lsd:
     sigma: 120
     downsample: 2
-    # sigma: 108
-    # downsample: 4
+#    sigma: 108
+#    downsample: 4
 
 
 wandb:
@@ -48,7 +51,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg
+    project: nseg_hl5
     name: ${shortname}
     tags:
       - mtlsd
@@ -60,28 +63,49 @@ wandb:
   # Include only files with these extensions
   code_include_fn_exts: ['.py', '.json', '.yaml', '.txt']
 
+#loss:
+#  loss_class: nseg.shared.WeightedMSELoss
+
+#loss:
+#  loss_class: nseg.shared.HardnessEnhancedLoss
+#  init_kwargs:
+#    enable_hardness_weighting: true
+#    hardness_loss_formula: mse
+#    loss_term_weights:
+#      aff: 1.0
+#      lsd: 1.0
+#      bce: 0.5
+#      hardness: 0.01
+
 training:
   iterations: 400001
-  save_every: 2000
+  save_every: 1000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
+  first_eval_at_step: 1
 
   ## Performance options
 
   # num_workers: auto
-  # num_workers: 0
+#  num_workers: 0
   num_workers: 32
+#  num_workers: 2
   enable_amp: true
+  # enable_amp: false
   enable_dynamo: false
   enable_cudnn_benchmark: true
+  # enable_cudnn_benchmark: false
 
   ## Main hyperparams
 
   batch_size: 1
   lr: 0.5e-4
 
-  # batch_size: 16
-  # lr: 1.0e-3
+#  batch_size: 8
+#  lr: 4.0e-4
+
+#  batch_size: 16
+#  lr: 1.0e-3
 
   save_jit: null
 
@@ -89,10 +113,12 @@ training:
 # TODO: eval subconfigs (default - testing; default - validation; agglo thresh sweep - validation)
 eval:
   max_eval_cubes: null  # Don't limit eval cubes (default)
-  # max_eval_cubes: 1  # Only do eval on first cube, skip others
+#  max_eval_cubes: 1  # Only do eval on first cube, skip others
   cube_root: ${dataset.val_root}
-  # cube_root: ${path_prefix}/data/j0126_gt_zarr_split_c350/testing/
-  checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/2023-04-14_04-02-04/model_checkpoint_20750_state_dict.pth
+  # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-14_16-57_intense-margin_mse_sum_numel/model_checkpoint_14800.pth
+  # checkpoint_path: /u/mdraw/lsdex/v1/train_mtlsd/06-19_17-41_andante-story_andmask_mse_w0.5/model_checkpoint_7000.pt
+#  checkpoint_path: /cajal/scratch/projects/misc/mdraw/lsdex/v1/train_mtlsd/06-23_05-46_crunchy-staff/model_checkpoint_8000.pt
+  checkpoint_path: null
   result_zarr_root: ${path_prefix}/${v}/eval_zarr/
   fragment_threshold: 0.5
 
@@ -105,6 +131,12 @@ eval:
   # merge_function: mean
   # threshold: 0.043
 
+  output_cfg:
+    pred_affs: { idx: 1, out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_lsds: { idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
+    # TODO: More concise output cfg
+    pred_boundaries: { idx: 2, out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_hardness: { idx: 3, out_dims: 1, out_dtype: float32, squeeze: true, scale: 0.5 }
 
   # roi_shape: [250, 250, 250]
   roi_shape: null
@@ -112,5 +144,7 @@ eval:
   write_groups:
     - raw0
     - gt_seg
-    - pred_frag
-    - pred_seg
+    - cropped_pred_frag
+    - cropped_pred_seg
+    - cropped_pred_hardness0
+

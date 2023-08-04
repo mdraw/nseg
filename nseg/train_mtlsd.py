@@ -1,6 +1,13 @@
 # Based on https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/train_mtlsd.ipynb
 
 import os
+
+# Make sure we're not multithreading because we already use one process per CPU core in training
+#  See https://stackoverflow.com/a/53224849
+for lib in ['OMP', 'OPENBLAS', 'MKL', 'NUMEXPR', 'VECLIB']:
+    os.environ[f'{lib}_NUM_THREADS'] = '1'
+
+
 import logging
 import time
 from pathlib import Path
@@ -22,9 +29,10 @@ import wandb
 
 # from params import input_size, output_size, voxel_size
 from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from nseg.shared import create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss
+from nseg.shared import compute_loss_maps, create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
 from nseg.gp_train import Train
 from nseg.gp_sources import ZarrSource
+from nseg.gp_boundaries import AddBoundaryLabels
 from nseg.conf import NConf, DictConfig, hydra
 
 
@@ -86,10 +94,29 @@ def get_run_time_str(start_time: float) -> str:
     return f'{h:d}:{m:02d}:{s:02d}'
 
 
+def get_mpl_imshow_fig(img):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    aximg = ax.imshow(img)
+    fig.colorbar(aximg)
+    return fig
+
+
 def train(cfg: DictConfig) -> None:
     _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
     tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
+
+    # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)
+    # Note that aff(inity) is always included as it's necessary for segmentation
+    loss_term_weights = cfg.loss.init_kwargs.loss_term_weights
+    nonzero_loss_term_weights = {
+        k: v for k, v in loss_term_weights.items() if v != 0 and v is not None
+    }
+    output_names = list(nonzero_loss_term_weights.keys())
+
+    lsd_enabled = 'lsd' in output_names
+    boundaries_enabled = 'bce' in output_names or 'bcd' in output_names
+    hardness_enabled = 'hardness' in output_names
 
     val_root = cfg.dataset.val_root
     if val_root is None:
@@ -115,12 +142,18 @@ def train(cfg: DictConfig) -> None:
 
     raw = gp.ArrayKey('RAW')
     labels = gp.ArrayKey('LABELS')
-    gt_lsds = gp.ArrayKey('GT_LSDS')
-    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
-    pred_lsds = gp.ArrayKey('PRED_LSDS')
     gt_affs = gp.ArrayKey('GT_AFFS')
     affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
     pred_affs = gp.ArrayKey('PRED_AFFS')
+
+    gt_lsds = gp.ArrayKey('GT_LSDS')
+    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
+    pred_lsds = gp.ArrayKey('PRED_LSDS')
+
+    gt_boundaries = gp.ArrayKey('GT_BOUNDARIES')
+    pred_boundaries = gp.ArrayKey('PRED_BOUNDARIES')
+
+    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     if cfg.dataset.enable_mask:
         labels_mask = gp.ArrayKey('GT_LABELS_MASK')
@@ -137,26 +170,65 @@ def train(cfg: DictConfig) -> None:
     output_shape = input_shape - offset
     output_size = output_shape * voxel_size
 
-    # model = get_mtlsdmodel()
-    model = build_mtlsdmodel(cfg.model)
+    model_cfg = cfg.model
+    model = build_mtlsdmodel(model_cfg)
     example_input = torch.randn(
         1,  # cfg.training.batch_size,
         1,  # cfg.model.backbone.init_kwargs.in_channels,
         *cfg.model.backbone.inp_shape,
     )
 
-    loss = WeightedMSELoss()
+    # loss = HardnessEnhancedLoss(cfg.loss.init_kwargs)
+
+    loss_class = import_symbol(cfg.loss.loss_class)
+    loss_init_kwargs = cfg.loss.get('init_kwargs', {})
+    loss = loss_class(**loss_init_kwargs)
+
     optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
+
+    trainer_inputs = {'input': raw}
+    trainer_outputs = {
+        # 'pred_lsds': pred_lsds,
+        'pred_affs': pred_affs,
+        # 'pred_boundaries': pred_boundaries,
+        # 'pred_hardness': pred_hardness,
+    }
+    trainer_loss_inputs = {
+        # 'pred_lsds': pred_lsds,
+        # 'gt_lsds': gt_lsds,
+        # 'lsds_weights': lsds_weights,
+        'pred_affs': pred_affs,
+        'gt_affs': gt_affs,
+        'affs_weights': affs_weights,
+        # 'pred_hardness': pred_hardness,
+        # 'pred_boundaries': pred_boundaries,
+        # 'gt_boundaries': gt_boundaries,
+    }
 
     request = gp.BatchRequest()
     request.add(raw, input_size)
     request.add(labels, output_size)
-    request.add(gt_lsds, output_size)
-    request.add(lsds_weights, output_size)
-    request.add(pred_lsds, output_size)
     request.add(gt_affs, output_size)
     request.add(affs_weights, output_size)
     request.add(pred_affs, output_size)
+
+    if lsd_enabled:
+        request.add(gt_lsds, output_size)
+        request.add(lsds_weights, output_size)
+        request.add(pred_lsds, output_size)
+        trainer_outputs['pred_lsds'] = trainer_loss_inputs['pred_lsds'] = pred_lsds
+        trainer_loss_inputs['gt_lsds'] = gt_lsds
+        trainer_loss_inputs['lsds_weights'] = lsds_weights
+
+    if boundaries_enabled:
+        request.add(gt_boundaries, output_size)
+        request.add(pred_boundaries, output_size)
+        trainer_outputs['pred_boundaries'] = trainer_loss_inputs['pred_boundaries'] = pred_boundaries
+        trainer_loss_inputs['gt_boundaries'] = gt_boundaries
+
+    if hardness_enabled:
+        request.add(pred_hardness, output_size)
+        trainer_outputs['pred_hardness'] = trainer_loss_inputs['pred_hardness'] = pred_hardness
 
     if cfg.dataset.enable_mask:
         request.add(labels_mask, output_size)
@@ -194,7 +266,7 @@ def train(cfg: DictConfig) -> None:
             src += gp.Pad(labels_mask, labels_padding)
         if cfg.dataset.enable_mask:
             # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine. TODO: get ratio from cfg.dataset
-            src += gp.RandomLocation(min_masked=0.3, mask=labels_mask)
+            src += gp.RandomLocation(min_masked=0.5, mask=labels_mask)
         else:
             src += gp.RandomLocation()
         sources.append(src)
@@ -206,16 +278,15 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.RandomProvider()
 
-    # pipeline += gp.ElasticAugment(
-    #     control_point_spacing=[4, 4, 10],
-    #     jitter_sigma=[0, 2, 2],
-    #     # rotation_interval=[0, np.pi / 2.0],
-    #     rotation_interval=[-np.pi / 16.0, np.pi / 16.0],  # Smaller rotation interval so we don't need as much space for rotation
-    #     prob_slip=0.05,
-    #     prob_shift=0.05,
-    #     max_misalign=10,
-    #     subsample=2,
-    # )
+    pipeline += gp.ElasticAugment(
+        control_point_spacing=[4, 4, 10],
+        jitter_sigma=[0, 2, 2],
+        rotation_interval=[0, np.pi / 2.0],
+        prob_slip=0.05,
+        prob_shift=0.05,
+        max_misalign=10,
+        subsample=8,
+    )
 
     pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
 
@@ -235,13 +306,21 @@ def train(cfg: DictConfig) -> None:
         only_xy=True
     )
 
-    # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
-    pipeline += AddLocalShapeDescriptor(
-        labels,
-        gt_lsds,
-        lsds_mask=lsds_weights,
-        **cfg.labels.lsd
-    )
+    if boundaries_enabled:
+        pipeline += AddBoundaryLabels(
+            instance_labels=labels,
+            boundary_labels=gt_boundaries,
+            # dtype=np.int64,
+        )
+
+    if lsd_enabled:
+        # TODO: Find formula for valid combinations of sigma, downsample, input/output shapes
+        pipeline += AddLocalShapeDescriptor(
+            labels,
+            gt_lsds,
+            lsds_mask=lsds_weights,
+            **cfg.labels.lsd
+        )
 
     neighborhood = cfg.labels.aff.nhood
 
@@ -254,7 +333,7 @@ def train(cfg: DictConfig) -> None:
         dtype=np.float32
     )
 
-    # if cfg.dataset.enable_mask:
+    # TODO: Replace by global label balancing.
     pipeline += gp.BalanceLabels(
         gt_affs,
         affs_weights,
@@ -278,23 +357,11 @@ def train(cfg: DictConfig) -> None:
         model,
         loss,
         optimizer,
-        inputs={
-            'input': raw
-        },
-        outputs={
-            0: pred_lsds,
-            1: pred_affs
-        },
-        loss_inputs={
-            0: pred_lsds,
-            1: gt_lsds,
-            2: lsds_weights,
-            3: pred_affs,
-            4: gt_affs,
-            5: affs_weights
-        },
+        inputs=trainer_inputs,
+        outputs=trainer_outputs,
+        loss_inputs=trainer_loss_inputs,
         # log_dir = "./logs/"
-        save_every=save_every,  # todo: increase,
+        save_every=save_every,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
         enable_amp=cfg.training.enable_amp,
@@ -307,7 +374,6 @@ def train(cfg: DictConfig) -> None:
     pipeline += trainer
 
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
-
 
     # pipeline += gp.PrintProfilingStats(every=10)
 
@@ -333,10 +399,13 @@ def train(cfg: DictConfig) -> None:
             # print('Batch sucessfull')
             start = request[labels].roi.get_begin() / voxel_size
             end = request[labels].roi.get_end() / voxel_size
-            if (i + 1) % 10 or (i + 1) % save_every == 0:
+            # Determine if/how much we should log this iteration
+            _full_eval_now = (i + 1) % save_every == 0 or cfg.training.first_eval_at_step == i + 1
+            _loss_log_now = _full_eval_now or (i + 1) % 10
+            if _loss_log_now:
                 tb.add_scalar("loss", batch.loss, batch.iteration)
                 wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
-            if (i + 1) % save_every == 0:
+            if _full_eval_now:
                 logging.info(
                     f'Evaluating at step {batch.iteration}, '
                     f'run time {get_run_time_str(_training_start_time)}, '
@@ -386,16 +455,56 @@ def train(cfg: DictConfig) -> None:
                 pred_affs_slice = get_zslice(batch[pred_affs].data[0])
                 pred_affs_img = wandb.Image(pred_affs_slice)
 
-                pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
-                pred_lsds3_img = wandb.Image(pred_lsds3_slice)
+                tr_imgs_wandb = {
+                    'training/images/gt_seg_overlay': gt_seg_overlay_img,
+                    'training/images/gt_affs': gt_affs_img,
+                    'training/images/pred_affs': pred_affs_img,
+                }
+
+                if lsd_enabled:
+                    gt_lsds3_slice = get_zslice(batch[gt_lsds].data[0][:3])
+                    gt_lsds3_img = wandb.Image(gt_lsds3_slice)
+                    pred_lsds3_slice = get_zslice(batch[pred_lsds].data[0][:3])
+                    pred_lsds3_img = wandb.Image(pred_lsds3_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/gt_lsds3': gt_lsds3_img,
+                        'training/images/pred_lsds3': pred_lsds3_img,
+                    })
+
+                if hardness_enabled:
+                    pred_hardness_slice = get_zslice(batch[pred_hardness].data[0])
+                    pred_hardness_fig = get_mpl_imshow_fig(pred_hardness_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/pred_hardness': pred_hardness_fig,
+                    })
+
+                if boundaries_enabled:
+                    with torch.inference_mode():
+                        _th_pred_boundaries = torch.as_tensor(batch[pred_boundaries].data[0], dtype=torch.float32)
+                        _np_sm_pred_boundaries = torch.softmax(_th_pred_boundaries, dim=0).numpy().astype(np.float32)[1]
+                    pred_boundaries_slice = get_zslice(_np_sm_pred_boundaries)
+                    pred_boundaries_fig = get_mpl_imshow_fig(pred_boundaries_slice)
+                    # pred_boundaries_fig = wandb.Image(pred_boundaries_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/pred_boundaries': pred_boundaries_fig,
+                    })
+
+                loss_maps = compute_loss_maps(
+                    loss_module=loss,
+                    batch=batch,
+                    loss_inputs_gpkeys=trainer.loss_inputs,
+                    device=trainer.device
+                )
+                loss_maps = prefixkeys(loss_maps, 'training/images/loss_maps/')
+
+                loss_maps_z_figs = {
+                    k: get_mpl_imshow_fig(get_zslice(v[0]))
+                    for k, v in loss_maps.items()
+                }
+                tr_imgs_wandb.update(loss_maps_z_figs)
 
                 wandb.log(
-                    {
-                        'training/images/gt_seg_overlay': gt_seg_overlay_img,
-                        'training/images/gt_affs': gt_affs_img,
-                        'training/images/pred_affs': pred_affs_img,
-                        'training/images/pred_lsds3': pred_lsds3_img,
-                    },
+                    tr_imgs_wandb,
                     step=batch.iteration,
                     commit=False
                 )
@@ -403,6 +512,9 @@ def train(cfg: DictConfig) -> None:
                 if len(val_files) > 0:
 
                     checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                    if not checkpoint_path.exists():
+                        # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
+                        trainer._save_model()
                     cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
                     rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}
@@ -417,22 +529,28 @@ def train(cfg: DictConfig) -> None:
                     val_pred_seg_img = get_zslice(cevr.arrays['cropped_pred_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_pred_frag_img = get_zslice(cevr.arrays['cropped_pred_frag'], as_wandb=True, enable_rgb_labels=True)
                     val_pred_affs_img = get_zslice(cevr.arrays['cropped_pred_affs'], as_wandb=True)
-                    val_pred_lsds3_img = get_zslice(cevr.arrays['cropped_pred_lsds'][:3], as_wandb=True)
-                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
                     val_gt_affs_img = get_zslice(cevr.arrays['gt_affs'], as_wandb=True)
-                    val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
+                    val_gt_seg_img = get_zslice(cevr.arrays['gt_seg'], as_wandb=True, enable_rgb_labels=True)
+
+                    val_imgs_wandb = {
+                        'validation/images/raw': val_raw_img,
+                        'validation/images/pred_seg': val_pred_seg_img,
+                        'validation/images/pred_frag': val_pred_frag_img,
+                        'validation/images/pred_affs': val_pred_affs_img,
+                        'validation/images/gt_seg': val_gt_seg_img,
+                        'validation/images/gt_affs': val_gt_affs_img,
+                    }
+
+                    if lsd_enabled:
+                        val_pred_lsds3_img = get_zslice(cevr.arrays['cropped_pred_lsds'][:3], as_wandb=True)
+                        val_gt_lsds3_img = get_zslice(cevr.arrays['gt_lsds'][:3], as_wandb=True)
+                        val_imgs_wandb.update({
+                            'validation/images/pred_lsds3': val_pred_lsds3_img,
+                            'validation/images/gt_lsds3': val_gt_lsds3_img,
+                        })
 
                     wandb.log(
-                        {
-                            'validation/images/raw': val_raw_img,
-                            'validation/images/pred_seg': val_pred_seg_img,
-                            'validation/images/pred_frag': val_pred_frag_img,
-                            'validation/images/pred_affs': val_pred_affs_img,
-                            'validation/images/pred_lsds3': val_pred_lsds3_img,
-                            'validation/images/gt_seg': val_gt_seg_img,
-                            'validation/images/gt_affs': val_gt_affs_img,
-                            'validation/images/gt_lsds3': val_gt_lsds3_img,
-                        },
+                        val_imgs_wandb,
                         step=batch.iteration,
                         commit=False
                     )

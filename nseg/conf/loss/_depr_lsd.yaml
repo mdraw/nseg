@@ -1,0 +1,3 @@
+_name: lsd
+
+loss_class: nseg.shared.WeightedMSELoss

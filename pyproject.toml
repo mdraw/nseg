@@ -17,8 +17,8 @@ classifiers = [
 dynamic = ["version", "dependencies"]
 
 [project.scripts]
-nseg-train = "nseg.train_mtlsd:main"
-nseg-segment = "nseg.segment_mtlsd:main"
+nseg-train = "nseg.train:main"
+nseg-segment = "nseg.segment:main"
 
 [tool.setuptools]
 packages = ["nseg"]

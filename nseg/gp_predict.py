@@ -1,10 +1,13 @@
 # Based on https://github.com/funkelab/gunpowder/blob/48768d2f3165cb52d8614069450a81f0599477ee/gunpowder/torch/nodes/predict.py
 
 import copy
+import os
 from gunpowder.array import ArrayKey, Array
 from gunpowder.array_spec import ArraySpec
 from gunpowder.ext import torch
 from gunpowder.nodes.generic_predict import GenericPredict
+
+import torch
 
 import logging
 from typing import Dict, Optional, Union
@@ -58,7 +61,7 @@ class Predict(GenericPredict):
             separate process. Default is false.
 
         float16: Whether to run ``predict`` in half precision (float16).
-            Default is ``True``.
+            Default is ``False``.
     """
 
     def __init__(
@@ -70,7 +73,9 @@ class Predict(GenericPredict):
         checkpoint: Optional[str] = None,
         device: str = 'cuda',
         spawn_subprocess: bool = False,
-        float16: bool = True
+        float16: bool = False,
+        enable_cudnn_benchmark: bool = True,
+        enable_hooks: bool = False,
     ):
 
         self.array_specs = array_specs if array_specs is not None else {}
@@ -87,24 +92,39 @@ class Predict(GenericPredict):
             array_specs,
             spawn_subprocess=spawn_subprocess)
 
+        if enable_cudnn_benchmark:
+            torch.backends.cudnn.benchmark = True
+
         self.device_string = device
         self.device = None  # to be set in start()
         self.model = model
         self.checkpoint = checkpoint
         self.float16 = float16
+        self.enable_hooks = enable_hooks
 
         self._inference_dtype = torch.float16 if self.float16 else torch.float32
         self._output_dtype = torch.float32
         self.intermediate_layers = {}
-        self.register_hooks()
+        if enable_hooks:
+            self.register_hooks()
 
     def start(self):
 
         self.use_cuda = (
             torch.cuda.is_available() and
             self.device_string == "cuda")
-        logger.info(f"Predicting on {'gpu' if self.use_cuda else 'cpu'}")
-        self.device = torch.device("cuda" if self.use_cuda else "cpu")
+        if self.use_cuda:
+            gpu_id = 0
+            # Immoral hack for multi-gpu inference in two processes that can't communicate directly.
+            #  We expect that since the predictor workers are spawned immediately after each other, their pids will be off by one.
+            #  This is not guaranteed at all but if it doesn't work, we just have to rerun the script...
+            pid = os.getpid()
+            if torch.cuda.device_count() == 2 and pid % 2:
+                gpu_id = 1
+            self.device = torch.device('cuda', gpu_id)
+        else:
+            self.device = torch.device('cpu')
+        logger.info(f"Predicting on {self.device}")
 
         try:
             self.model = self.model.to(self.device)
@@ -162,12 +182,18 @@ class Predict(GenericPredict):
         outputs = {}
         if isinstance(module_out, tuple):
             module_outs = module_out
+        elif isinstance(module_out, dict):
+            module_outs = module_out
         else:
             module_outs = (module_out,)
         for key, value in self.outputs.items():
             if value in request:
                 if isinstance(key, str):
-                    outputs[value] = self.intermediate_layers[key]
+                    if self.enable_hooks:
+                        outputs[value] = self.intermediate_layers[key]
+                    else:
+                        if module_outs.get(key) is not None:
+                            outputs[value] = module_outs[key]
                 elif isinstance(key, int):
                     outputs[value] = module_outs[key]
         return outputs

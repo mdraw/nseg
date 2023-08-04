@@ -1,0 +1,10 @@
+_name: default
+
+keep_original_layout: true
+cloudvolume_url: https://storage.googleapis.com/j0126-nature-methods-data/GgwKmcKgrcoNxJccKuGIzRnQqfit9hnfK1ctZzNbnuU/rawdata_realigned
+dest_zarr_path: /cajal/scratch/projects/misc/mdraw/data/fullraw_fromcloudvolume_j0126/j0126.zarr
+
+raw_key: volumes/raw
+
+resolution: [20, 9, 9]
+chunk_shape: [512, 512, 512]

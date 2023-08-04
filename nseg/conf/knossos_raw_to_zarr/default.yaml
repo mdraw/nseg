@@ -1,0 +1,9 @@
+_name: default
+
+knossos_conf_path: /cajal/scratch/projects/cubes/j0126_cubed_realigned/mag1/knossos.conf
+dest_zarr_path: /cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr
+
+raw_key: volumes/raw
+
+resolution: [20, 9, 9]
+chunk_shape: [512, 512, 512]

@@ -1,0 +1,10 @@
+_name: aff
+
+loss_class: nseg.shared.HardnessEnhancedLoss
+init_kwargs:
+  enable_hardness_weighting: false
+  enable_oob_masking: false
+  normalize_weights: true
+  hardness_loss_formula: mse
+  loss_term_weights:
+    aff: 1.0
