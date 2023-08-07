@@ -1,5 +1,6 @@
-import numpy
+import numpy as np
 import zstandard
+
 
 
 def np_savezstd(fp: str, level=5, *args, **kwargs):
@@ -10,8 +11,8 @@ def np_savezstd(fp: str, level=5, *args, **kwargs):
 
     with open(fp, 'wb') as f:
         cctx = zstandard.ZstdCompressor(level=level)
-        with cctx.stream_writer(f) as compressor:
-            numpy.savez(compressor, *args, **kwargs)
+        with cctx.stream_writer(f) as comp:
+            np.savez(comp, *args, **kwargs)
 
 
 def np_loadzstd(fp: str):
@@ -22,5 +23,6 @@ def np_loadzstd(fp: str):
 
     with open(fp, 'rb') as f:
         dctx = zstandard.ZstdDecompressor()
-        with dctx.stream_reader(f) as decompressor:
-            return numpy.load(decompressor)
+        return np.load(dctx.decompress(f.read()))
+        # with dctx.stream_reader(f) as decomp:
+        #     return numpy.load(decomp)

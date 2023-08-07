@@ -120,10 +120,11 @@ def predict(
             'input': raw
         },
         outputs=_predict_outputs,
+        enable_cudnn_benchmark=False,
     )
 
-    if 'boundaries' in output_names:
-        boundary_arrkey = output_arrkeys['boundaries']
+    if 'pred_boundaries' in output_names:
+        boundary_arrkey = output_arrkeys['pred_boundaries']
         # pipeline += ArgMax(boundaries)
         pipeline += SoftMax(boundary_arrkey)
         pipeline += Take(boundary_arrkey, 1, 1)  # Take channel 1

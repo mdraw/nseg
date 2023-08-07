@@ -30,7 +30,7 @@ def run_i456(dict_cfg: dict, log_file=None) -> None:
             datefmt='%Y-%m-%d %H:%M:%S',
             handlers=[
                 logging.StreamHandler(sys.stdout),
-                logging.StreamHandler(sys.stderr),
+                # logging.StreamHandler(sys.stderr),
                 logging.FileHandler(log_file, mode='a'),
             ]
         )
@@ -62,7 +62,6 @@ def run_i456(dict_cfg: dict, log_file=None) -> None:
 
 @hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
-
     start = time.time()
 
     jobs_to_run = list(cfg.meta.jobs_to_run)

@@ -1,7 +1,7 @@
 """
 Set up config system based on OmegaConf and Hydra.
 """
-
+from pathlib import Path
 from typing import Any, Optional, Sequence, TypeVar
 import hydra
 import randomname
@@ -53,8 +53,27 @@ class NConf(OmegaConf):
 
 # Register custom resolvers to NConf
 
+def get_setup_name(model_path: str | Path, short=True) -> str:
+    """String representation to identify the model checkpoint"""
+    model_path = Path(model_path)
+    model_name = model_path.parent.name
+    if short:
+        model_name = model_name[:20]  # Limit to first 20 chars to avoid overly long names
+        # Just the step number
+        checkpoint_name = model_path.stem.split('_')[-1]
+        assert checkpoint_name.isdigit(), f'Can\'t parse step number from {model_path.name}'
+        assert checkpoint_name[-3:] == '000', f'Can\'t parse step number from {model_path.name} - not a multiple of 1000'
+        checkpoint_name = f'{checkpoint_name[:-3]}k'  # trailing 000 -> k
+    else:
+        checkpoint_name = model_path.name
+    setup_name = f'{model_name}__{checkpoint_name}'
+    return setup_name
+
+
 # use_cache=True is necessary for node interpolation - otherwise the name is randomized on each access
 NConf.register_new_resolver('randomname', randomname.get_name, use_cache=True)
+
+NConf.register_new_resolver('setupname', get_setup_name, use_cache=True)
 
 
 __all__ = [

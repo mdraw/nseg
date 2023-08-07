@@ -4,8 +4,8 @@ path_prefix: ${oc.env:HOME}/lsdex
 # Short description for manually tagging runs, to be set via hydra CLI
 descr: ''
 
-# Generate random two-word codename using custom omgegaconf resolver
-shortname: ${randomname:}${descr}
+# Generate random two-word codename using custom OmegaConf / NConf resolver
+#shortname: ${randomname:}${descr}
 
 # Time stamp in ISO 8601-like format
 # timestamp: ${now:%Y-%m-%d_%H-%M-%S}
@@ -14,13 +14,22 @@ timestamp: ${now:%m-%d_%H-%M}
 # Version tag
 v: v1
 
+roi: 11_micron
+
+# Get setup name from custom OmegaConf / NConf resolver based on model path
+setup: ${setupname:${i1_predict.model_path}}_${roi}_j
+
+output_dir : ${path_prefix}/${v}/inference/${setup}
+
+
 hydra:
   run:
     # Where to write logs and config copies
-     dir: ${path_prefix}/${v}/${setup}/${hydra.job.name}/${timestamp}_${shortname}
+     dir: ${output_dir}/${hydra.job.name}-hydra/
+#     dir: ${path_prefix}/${v}/inference/${hydra.job.name}/${setup}
+#     dir: ${path_prefix}/${v}/${setup}/${hydra.job.name}/${timestamp}_${shortname}
 #    dir: ${path_prefix}/${v}/inference/${setup}/${hydra.job.name}
 
-setup: crunchy1
 
 
 meta:
@@ -41,26 +50,26 @@ meta:
     timeout_min: 10080  # 7 days
 
 common:
-  roi: 11_micron
+  roi: ${roi}
   experiment: zebrafinch
   setup: ${setup}
   db_host: cajalg001
-  db_name: zf_crunchy11q
+  db_name: ${setup}
 
   voxel_size: [20, 9, 9]
   block_size: [3600, 3600, 3600]
   context: [240, 243, 243]
 
   # raw_file: /cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_benchmark_roi.json
-  raw_file: /cajal/scratch/projects/misc/mdraw/data/nseg_roi_containers/zf_${common.roi}_roi.json
-  mask_file: /cajal/scratch/projects/misc/mdraw/data/funke/zebrafinch/testing/ground_truth/data.zarr
+  raw_file: ${path_prefix}/data/nseg_roi_containers/zf_${common.roi}_roi.json
+  mask_file: ${path_prefix}/data/funke/zebrafinch/testing/ground_truth/data.zarr
 
 
   # Output path (affinities, ...)
-  out_file: ${path_prefix}/${v}/inference/${setup}/${common.roi}/affs.zarr
+  out_file: ${output_dir}/affs.zarr
   affs_file: ${common.out_file}
-  fragments_file: ${path_prefix}/${v}/inference/${setup}/${common.roi}/frag.zarr
-  seg_file: ${path_prefix}/${v}/inference/${setup}/${common.roi}/seg.zarr
+  fragments_file: ${output_dir}/frag.zarr
+  seg_file: ${output_dir}/seg.zarr
 
   pybin: /cajal/scratch/projects/misc/mdraw/anaconda3/envs/nseg/bin/python
 
@@ -76,21 +85,23 @@ common:
 
 
 i1_predict:
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-02_23-35_unary-tree_u3_lsd/model_checkpoint_23000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_155000.pt
 
   num_workers: 100
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=24", "--gres=gpu:1", "--job-name=ns01pr"]
+  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=28", "--gres=gpu:1", "--job-name=ns01pr"]
 
   # net_input_shape: [84, 268, 268]
-  net_input_shape: [96, 484, 484]
+#  net_input_shape: [96, 484, 484]
+  net_input_shape: [192, 484, 484]
 #  net_offset: [40, 40, 40]
   net_offset: [36, 212, 212]
 
   output_cfg:
     pred_affs:       {idx: 1, out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
     pred_lsds:       {idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
-#    pred_boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
-#    pred_hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   0.5}
+
+    pred_boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   0.5}
 
 
 i2_extract_fragments:
@@ -98,40 +109,36 @@ i2_extract_fragments:
   fragments_in_xy: True
   epsilon_agglomerate: 0.1
   filter_fragments: 0.05
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=200G", "--cpus-per-task=24", "--job-name=ns02ex"]
+  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=200G", "--cpus-per-task=28", "--job-name=ns02ex"]
 
 
 i3_agglomerate:
   num_workers: 64
   merge_function: hist_quant_75
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=400G", "--cpus-per-task=24", "--job-name=ns03ag"]
+  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=400G", "--cpus-per-task=28", "--job-name=ns03ag"]
 
 
 i4_find_segments:
   num_workers: 32
   thresholds_minmax: [0, 1]
 #  thresholds_step: 0.02
-  thresholds_step: 0.1
+  thresholds_step: 0.2
 
 i5_extract_segmentation:
-  num_workers: 64
+  num_workers: 5
   threshold: 0.4
 
 i6_evaluate_annotations:
   num_workers: 4
   edges_db_host: ${common.db_host}
   edges_db_name: ${common.db_name}
-  scores_db_name: scores_${common.db_name}
   annotations_db_host: ${common.db_host}
 #  annotations_db_name: val_annotations  # validation set
-  annotations_db_name: annotations  # test set
+  annotations_db_name: test_annotations  # test set
+  scores_db_name: scores_${common.db_name}_${.annotations_db_name}
   annotations_skeletons_collection_name: zebrafinch
   node_components: zebrafinch_components
   node_mask: zebrafinch_mask
-  # roi_offset: [50800, 43200, 44100]  # 11u
-  # roi_shape: [10800, 10800, 10800]  # 11u
-  # roi_offset: [40000, 32400, 33300]  # 32u
-  # roi_shape: [32400, 32400, 32400]  # 32u
   # roi_offset: [4000, 7200, 4500]  # benchmark_roi
   # roi_shape: [106000, 83700, 87300]  # benchmark_roi
   thresholds_minmax: [0.4, 1]

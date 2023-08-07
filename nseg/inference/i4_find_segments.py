@@ -6,9 +6,12 @@ import numpy as np
 import os
 import sys
 import time
+import zarr
+from numcodecs import Zstd
 from funlib.segment.graphs.impl import connected_components
 
 from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+from nseg.inference.iutils import np_savezstd
 
 
 def find_segments(
@@ -180,13 +183,21 @@ def get_connected_components(
 
     logging.info(f"Storing fragment-segment LUT for threshold {threshold}...")
 
-    lookup = f"seg_{edges_collection}_{int(threshold*100)}"
+    # lookup = f"seg_{edges_collection}_{int(threshold*100)}"
+    lookup = f"seg_{edges_collection}_{int(threshold*100)}.zarr"
 
     out_file = os.path.join(out_dir, lookup)
 
     _t0 = time.time()
-    np.savez_compressed(out_file, fragment_segment_lut=lut)
-    logging.info(f"np.savez_compressed took {(time.time() - _t0) * 1000} ms")
+    # np.savez_compressed(out_file, fragment_segment_lut=lut)
+    # Use zarr instead of npz_compressed -> ~ 10x speedup and smaller file size
+    # This can save multiple hours for larger ROIs
+    # We don't need chunks because access pattern later will be random
+    zarr.save_array(out_file, lut, chunks=False, compressor=Zstd(1))
+
+    logging.info(f"zarr.save_array took {(time.time() - _t0)} s")
+
+    # logging.info(f"np.savez_compressed took {(time.time() - _t0)} s")
 
     return 0  # return 0 to indicate success
 

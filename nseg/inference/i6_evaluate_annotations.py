@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import daisy
 import glob
 import json
@@ -8,6 +10,9 @@ import numpy as np
 import os
 import sys
 import time
+
+import zarr
+from numcodecs import Zstd
 from funlib.segment.arrays import replace_values
 from funlib.evaluate import rand_voi, \
         expected_run_length, \
@@ -55,6 +60,7 @@ class EvaluateAnnotations():
             annotations_synapses_collection_name=None,
             compute_mincut_metric=False,
             num_workers=4,
+            enable_mp_eval=False,
             **_ # Gobble all other kwargs
     ):
 
@@ -174,6 +180,7 @@ class EvaluateAnnotations():
         self.annotations_db_name = annotations_db_name
         self.annotations_skeletons_collection_name = \
             annotations_skeletons_collection_name
+        self.enable_mp_eval = enable_mp_eval
 
         if roi_offset is None or roi_shape is None:
             assert roi_offset is None and roi_shape is None, 'Either both or neither roi_offset and roi_shape must be None.'
@@ -256,6 +263,18 @@ class EvaluateAnnotations():
             block_lut_path,
             site_fragment_lut=site_fragment_lut,
             num_bg_sites=num_bg_sites)
+
+    # # store LUT (zarr version). Performance is not very important here (small arrays), so we can keep using np here.
+    # site_fragment_lut_path = Path(self.site_fragment_lut_directory) / f'site_fragment_lut_{block.block_id}.zarr'
+    # num_bg_sites_path = Path(self.site_fragment_lut_directory) / f'num_bg_sites_{block.block_id}.zarr'
+    #
+    # np.savez_compressed(
+    #     block_lut_path,
+    #     site_fragment_lut=site_fragment_lut,
+    #     num_bg_sites=num_bg_sites)
+    #
+    # zarr.save_array(site_fragment_lut_path, site_fragment_lut, chunks=False, compressor=Zstd(1))
+    # zarr.save_array(num_bg_sites_path, num_bg_sites, chunks=False, compressor=Zstd(1))
 
     def prepare_for_roi(self):
 
@@ -441,15 +460,20 @@ class EvaluateAnnotations():
 
         logging.info("Evaluating thresholds...")
 
-        for threshold in thresholds:
-            proc = mp.Process(
-                target=lambda: self.evaluate_threshold(threshold)
-            )
-            procs.append(proc)
-            proc.start()
+        if self.enable_mp_eval:
+            logging.info('Running evaluate_threshold() in mulitprocessing mode')
+            for threshold in thresholds:
+                proc = mp.Process(
+                    target=lambda: self.evaluate_threshold(threshold)
+                )
+                procs.append(proc)
+                proc.start()
 
-        for proc in procs:
-            proc.join()
+            for proc in procs:
+                proc.join()
+        else:
+            for threshold in thresholds:
+                self.evaluate_threshold(threshold)
 
     def get_site_segment_ids(self, threshold):
 
@@ -472,10 +496,12 @@ class EvaluateAnnotations():
 
         fragment_segment_lut_file = os.path.join(
                 fragment_segment_lut_dir,
-                'seg_%s_%d.npz' % (self.edges_collection, int(threshold*100)))
+                # 'seg_%s_%d.npz' % (self.edges_collection, int(threshold*100)))
+                'seg_%s_%d.zarr' % (self.edges_collection, int(threshold * 100)))
 
-        fragment_segment_lut = np.load(
-            fragment_segment_lut_file)['fragment_segment_lut']
+        # fragment_segment_lut = np.load(fragment_segment_lut_file)['fragment_segment_lut']
+        fragment_segment_lut = zarr.open(fragment_segment_lut_file, 'r')
+        fragment_segment_lut = np.array(fragment_segment_lut)  # Load LUT into memory at once
 
         assert fragment_segment_lut.dtype == np.uint64
 

@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sys
 import time
+import zarr
 from funlib.segment.arrays import replace_values
 
 from nseg.conf import NConf, DictConfig, hydra, unwind_dict
@@ -112,15 +113,16 @@ def extract_segmentation(
         lut_dir = os.path.join(lut_dir, run_type)
         logging.info(f"Run type set, using luts from {run_type} data")
 
-    lut = os.path.join(
-            lut_dir,
-            lut_filename + '.npz')
+    # lut = os.path.join(lut_dir, lut_filename + '.npz')
+    lut_path = os.path.join(lut_dir, lut_filename + '.zarr')
 
-    assert os.path.exists(lut), f"{lut} does not exist"
+    assert os.path.exists(lut_path), f"{lut_path} does not exist"
 
     logging.info("Reading fragment-segment LUT...")
 
-    lut = np.load(lut)['fragment_segment_lut']
+    # lut = np.load(lut_path)['fragment_segment_lut']
+    lut = zarr.open(lut_path, 'r')
+    lut = np.array(lut)  # Load LUT into memory at once
 
     logging.info(f"Found {len(lut[0])} fragments in LUT")
 
