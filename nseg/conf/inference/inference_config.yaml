@@ -17,7 +17,7 @@ v: v1
 roi: 11_micron
 
 # Get setup name from custom OmegaConf / NConf resolver based on model path
-setup: ${setupname:${i1_predict.model_path}}_${roi}_j
+setup: ${setupname:${i1_predict.model_path}}_${roi}_l
 
 output_dir : ${path_prefix}/${v}/inference/${setup}
 
@@ -85,7 +85,7 @@ common:
 
 
 i1_predict:
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_155000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_187000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=28", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -124,12 +124,8 @@ i4_find_segments:
 #  thresholds_step: 0.02
   thresholds_step: 0.2
 
-i5_extract_segmentation:
-  num_workers: 5
-  threshold: 0.4
-
-i6_evaluate_annotations:
-  num_workers: 4
+i5_evaluate_annotations:
+  num_workers: 16
   edges_db_host: ${common.db_host}
   edges_db_name: ${common.db_name}
   annotations_db_host: ${common.db_host}
@@ -143,3 +139,7 @@ i6_evaluate_annotations:
   # roi_shape: [106000, 83700, 87300]  # benchmark_roi
   thresholds_minmax: [0.4, 1]
   thresholds_step: 1
+
+i6_extract_segmentation:
+  num_workers: 32
+  threshold: 0.4

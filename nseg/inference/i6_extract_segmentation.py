@@ -154,8 +154,8 @@ def segment_in_block(
     # load fragments
     fragments = fragments.to_ndarray(block.write_roi)
 
-    # replace values, write to empty array
-    relabelled = np.zeros_like(fragments)
+    # # replace values, write to empty array
+    # relabelled = np.zeros_like(fragments)
     relabelled = replace_values(fragments, lut[0], lut[1], inplace=True)
 
     segmentation[block.write_roi] = relabelled
@@ -170,7 +170,7 @@ def main(cfg: DictConfig) -> None:
 
     dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
-    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_extract_segmentation'])
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_extract_segmentation'])
 
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
     logging.info(f'Hydra run dir: {_hydra_run_dir}')

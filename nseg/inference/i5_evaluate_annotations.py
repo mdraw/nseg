@@ -276,6 +276,8 @@ class EvaluateAnnotations():
     # zarr.save_array(site_fragment_lut_path, site_fragment_lut, chunks=False, compressor=Zstd(1))
     # zarr.save_array(num_bg_sites_path, num_bg_sites, chunks=False, compressor=Zstd(1))
 
+        return 0
+
     def prepare_for_roi(self):
 
         logging.info(f"Preparing evaluation for ROI {self.roi}...")
@@ -977,7 +979,7 @@ def main(cfg: DictConfig) -> None:
 
     dict_cfg = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
 
-    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_evaluate_annotations'])
+    dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_evaluate_annotations'])
 
     _hydra_run_dir = hydra.core.hydra_config.HydraConfig.get()['run']['dir']
     logging.info(f'Hydra run dir: {_hydra_run_dir}')

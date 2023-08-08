@@ -5,8 +5,8 @@ from nseg.conf import NConf, DictConfig, hydra, unwind_dict
 
 from nseg.inference import (
     i4_find_segments,
-    i5_extract_segmentation_from_lut,
-    i6_evaluate_annotations
+    i6_extract_segmentation,
+    i5_evaluate_annotations
 )
 
 
@@ -24,11 +24,11 @@ def main(cfg: DictConfig) -> None:
     i4_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i4_find_segments'])
     i4_find_segments.find_segments(**i4_dict_cfg)
 
-    i5_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_extract_segmentation_from_lut'])
-    i5_extract_segmentation_from_lut.extract_segmentation(**i5_dict_cfg)
+    i5_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_extract_segmentation'])
+    i6_extract_segmentation.extract_segmentation(**i5_dict_cfg)
 
-    i6_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_evaluate_annotations'])
-    evaluate = i6_evaluate_annotations.EvaluateAnnotations(**i6_dict_cfg)
+    i6_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_evaluate_annotations'])
+    evaluate = i5_evaluate_annotations.EvaluateAnnotations(**i6_dict_cfg)
     evaluate.evaluate()
 
     seconds = time.time() - start
