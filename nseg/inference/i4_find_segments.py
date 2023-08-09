@@ -137,10 +137,7 @@ def find_segments(
 
     logging.info(f"Complete RAG contains {len(nodes)} nodes, {len(edges)} edges")
 
-    out_dir = os.path.join(
-        fragments_file,
-        'luts',
-        'fragment_segment')
+    out_dir = os.path.join(fragments_file, 'luts', 'fragment_segment')
 
     if run_type:
         out_dir = os.path.join(out_dir, run_type)
@@ -202,7 +199,7 @@ def get_connected_components(
     return 0  # return 0 to indicate success
 
 
-@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+@hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
     start = time.time()

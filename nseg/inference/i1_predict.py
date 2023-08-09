@@ -184,7 +184,6 @@ def predict_blockwise(
         read_roi=block_read_roi,
         write_roi=block_write_roi,
         process_function=lambda: predict_worker(
-            network_dir=network_dir,
             model_path=model_path,
             raw_file=raw_file,
             raw_dataset=raw_dataset,
@@ -209,7 +208,6 @@ def predict_blockwise(
         raise RuntimeError("Prediction failed for (at least) one block")
 
 def predict_worker(
-        network_dir,
         model_path,
         raw_file,
         raw_dataset,
@@ -260,7 +258,7 @@ def predict_worker(
     # get worker id
     worker_id = daisy.Context.from_env().worker_id
 
-    output_dir = os.path.join(_hydra_run_dir, 'predict_blockwise', network_dir, initial_timestamp)
+    output_dir = os.path.join(_hydra_run_dir, 'i1_predict', initial_timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
     # pipe output
@@ -301,7 +299,7 @@ def check_block(blocks_predicted, block):
 
     return done
 
-@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+@hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
     start = time.time()

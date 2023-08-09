@@ -147,8 +147,6 @@ def extract_fragments(
         affs_dataset = affs_dataset + '/s0'
         source = daisy.open_ds(affs_file, affs_dataset)
 
-    network_dir = os.path.join(experiment, setup)
-
     client = pymongo.MongoClient(db_host)
     db = client[db_name]
 
@@ -194,7 +192,6 @@ def extract_fragments(
             db_name=db_name,
             context=context,
             fragments_in_xy=fragments_in_xy,
-            network_dir=network_dir,
             epsilon_agglomerate=epsilon_agglomerate,
             mask_file=mask_file,
             mask_dataset=mask_dataset,
@@ -222,7 +219,6 @@ def start_worker(
         db_name,
         context,
         fragments_in_xy,
-        network_dir,
         epsilon_agglomerate,
         mask_file,
         mask_dataset,
@@ -239,7 +235,7 @@ def start_worker(
 
     logging.info(f"worker {worker_id} started...")
 
-    output_dir = os.path.join(_hydra_run_dir, 'extract_fragments_blockwise', network_dir, initial_timestamp)
+    output_dir = os.path.join(_hydra_run_dir, 'i2_extract_fragments', initial_timestamp)
     os.makedirs(output_dir, exist_ok=True)
 
     timestamp = datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')
@@ -295,7 +291,7 @@ def check_block(blocks_extracted, block):
 
     return done
 
-@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+@hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
     start = time.time()

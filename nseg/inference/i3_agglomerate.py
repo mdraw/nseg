@@ -105,8 +105,6 @@ def agglomerate(
     logging.info(f"Reading affs from {affs_file}")
     affs = daisy.open_ds(affs_file, affs_dataset, mode='r')
 
-    network_dir = os.path.join(experiment, setup, merge_function)
-
     logging.info(f"Reading fragments from {fragments_file}")
     fragments = daisy.open_ds(fragments_file, fragments_dataset, mode='r')
 
@@ -141,7 +139,6 @@ def agglomerate(
             db_host=db_host,
             db_name=db_name,
             merge_function=merge_function,
-            network_dir=network_dir,
             initial_timestamp=initial_timestamp,
             pybin=pybin,
             slurm_options=slurm_options,
@@ -164,7 +161,6 @@ def start_worker(
         db_host,
         db_name,
         merge_function,
-        network_dir,
         initial_timestamp,
         pybin,
         slurm_options,
@@ -175,7 +171,7 @@ def start_worker(
 
     logging.info(f"worker {worker_id} started...")
 
-    output_dir = os.path.join(_hydra_run_dir, 'agglomerate_blockwise', network_dir, initial_timestamp)
+    output_dir = os.path.join(_hydra_run_dir, 'agglomerate_blockwise', merge_function, initial_timestamp)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -228,7 +224,7 @@ def check_block(blocks_agglomerated, block):
     return done
 
 
-@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+@hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
     start = time.time()

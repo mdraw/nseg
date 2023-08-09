@@ -91,6 +91,7 @@ def extract_segmentation(
         total_roi = daisy.Roi(offset=roi_offset, shape=roi_shape)
 
     read_roi = daisy.Roi((0,)*3, daisy.Coordinate(block_size))
+    # read_roi = total_roi
     write_roi = read_roi
 
     logging.info("Preparing segmentation dataset...")
@@ -163,7 +164,7 @@ def segment_in_block(
     return 0  # return 0 to indicate success
 
 
-@hydra.main(version_base='1.3', config_path='../conf/inference', config_name='inference_config')
+@hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
 
     start = time.time()
