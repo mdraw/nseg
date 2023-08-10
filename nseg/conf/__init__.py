@@ -70,10 +70,16 @@ def get_setup_name(model_path: str | Path, short=True) -> str:
     return setup_name
 
 
+# TODO: Test
+def x100(x: str) -> str:
+    """Percentage from float. Examples: '0.4 -> 40', '0.045' -> '45' """
+    return str(int(float(x) * 100))
+
+
 # use_cache=True is necessary for node interpolation - otherwise the name is randomized on each access
 NConf.register_new_resolver('randomname', randomname.get_name, use_cache=True)
-
 NConf.register_new_resolver('setupname', get_setup_name, use_cache=True)
+# NConf.register_new_resolver('x100', x100, use_cache=True)
 
 
 __all__ = [

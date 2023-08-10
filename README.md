@@ -11,13 +11,17 @@ From project root:
 Run in this order:
 
     python -m nseg.scripts.rename_gt
-    python -m nseg.scripts.zarrify_j0126
+    python -m nseg.scripts.zarrify_j0126_gt
     python -m nseg.scripts.create_data_split
 
 ## Training
 
     nseg-train
 
-## Inference
+## Small-scale inference and evaluation (small cubes)
 
     nseg-segment
+
+## Large-scale inference and evaluation (whole dataset or ROI)
+
+    python -m nseg.inference.full_eval

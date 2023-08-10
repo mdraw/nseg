@@ -3,7 +3,6 @@
 from __future__ import print_function
 import json
 import logging
-import numpy as np
 import os
 import sys
 import pymongo
@@ -13,8 +12,8 @@ import torch
 
 import gunpowder as gp
 
-from nseg.gp_predict import Predict
-from nseg.gp_boundaries import ArgMax, SoftMax, Take
+from nseg.gpx.gp_predict import Predict
+from nseg.gpx.gp_boundaries import SoftMax, Take
 
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 

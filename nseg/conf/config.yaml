@@ -2,8 +2,8 @@
 defaults:
   - model: hl_unet
   - loss: hl
-  - dataset: j0126_2val
-  - data_prep: default
+  - dataset: j0126_v2_c350
+  - data_prep: v2
   - knossos_raw_to_zarr: default
   - cloudvolume_raw_to_zarr: default
   - _self_
@@ -61,7 +61,7 @@ wandb:
   # Log metrics per cube with filename suffix in addition to mean metrics
   enable_per_cube_metrics: true
   # Include only files with these extensions
-  code_include_fn_exts: ['.py', '.json', '.yaml', '.txt']
+  code_include_fn_exts: ['.py', '.json', '.yaml', '.yml', '.sh', '.txt']
 
 #loss:
 #  loss_class: nseg.shared.WeightedMSELoss
@@ -77,12 +77,15 @@ wandb:
 #      bce: 0.5
 #      hardness: 0.01
 
+augmentations:
+  enable_elastic: false
+
 training:
   iterations: 400001
   save_every: 1000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
-  first_eval_at_step: 1
+  first_eval_at_step: 11
 
   ## Performance options
 
@@ -127,6 +130,7 @@ eval:
 
   merge_function: hist_quant_75
   threshold: 0.01
+#  threshold: 0.4
 
   # merge_function: mean
   # threshold: 0.043

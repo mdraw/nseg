@@ -19,13 +19,13 @@ from lsd.train.local_shape_descriptor import get_local_shape_descriptors
 from lsd.train.gp import AddLocalShapeDescriptor
 
 
-from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
-from nseg.gp_predict import Predict
-from nseg.gp_sources import ZarrSource
-from nseg.gp_scan import Scan
-from nseg.gp_boundaries import ArgMax, SoftMax, Take
+from nseg.shared import create_lut, build_mtlsdmodel, WeightedMSELoss, import_symbol
+from nseg.gpx.gp_predict import Predict
+from nseg.gpx.gp_sources import ZarrSource
+from nseg.gpx.gp_scan import Scan
+from nseg.gpx.gp_boundaries import ArgMax, SoftMax, Take
 
-from nseg.conf import NConf, DictConfig, hydra
+from nseg.conf import DictConfig, hydra
 from nseg.eval_utils import CubeEvalResult
 
 

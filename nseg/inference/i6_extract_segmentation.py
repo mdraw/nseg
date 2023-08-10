@@ -101,7 +101,9 @@ def extract_segmentation(
         total_roi,
         voxel_size=fragments.voxel_size,
         dtype=np.uint64,
-        write_roi=write_roi)
+        write_roi=write_roi,
+        compressor={'id': 'zstd', 'level': 5},
+    )
 
     lut_filename = f'seg_{edges_collection}_{int(threshold*100)}'
 

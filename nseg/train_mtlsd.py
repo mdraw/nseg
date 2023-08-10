@@ -28,11 +28,12 @@ from tqdm import tqdm
 import wandb
 
 # from params import input_size, output_size, voxel_size
-from nseg.segment_mtlsd import center_crop, eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
-from nseg.shared import compute_loss_maps, create_lut, get_mtlsdmodel, build_mtlsdmodel, WeightedMSELoss, HardnessEnhancedLoss, import_symbol
-from nseg.gp_train import Train
-from nseg.gp_sources import ZarrSource
-from nseg.gp_boundaries import AddBoundaryLabels
+from nseg.segment_mtlsd import eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
+from nseg.shared import compute_loss_maps, build_mtlsdmodel, import_symbol
+from nseg.gpx.gp_train import Train
+from nseg.gpx.gp_sources import ZarrSource
+from nseg.gpx.gp_boundaries import AddBoundaryLabels
+from nseg.gpx.gp_distmaps import AddDistMap
 from nseg.conf import NConf, DictConfig, hydra
 
 
@@ -112,11 +113,12 @@ def train(cfg: DictConfig) -> None:
     nonzero_loss_term_weights = {
         k: v for k, v in loss_term_weights.items() if v != 0 and v is not None
     }
-    output_names = list(nonzero_loss_term_weights.keys())
+    nonzero_loss_term_names = list(nonzero_loss_term_weights.keys())
 
-    lsd_enabled = 'lsd' in output_names
-    boundaries_enabled = 'bce' in output_names or 'bcd' in output_names
-    hardness_enabled = 'hardness' in output_names
+    lsd_enabled = 'lsd' in nonzero_loss_term_names
+    boundaries_enabled = 'bce' in nonzero_loss_term_names or 'bcd' in nonzero_loss_term_names
+    boundary_distmaps_enabled = 'bdt' in nonzero_loss_term_names
+    hardness_enabled = 'hardness' in nonzero_loss_term_names
 
     val_root = cfg.dataset.val_root
     if val_root is None:
@@ -153,13 +155,16 @@ def train(cfg: DictConfig) -> None:
     gt_boundaries = gp.ArrayKey('GT_BOUNDARIES')
     pred_boundaries = gp.ArrayKey('PRED_BOUNDARIES')
 
+    gt_boundary_distmap = gp.ArrayKey('GT_BOUNDARY_DISTMAP')
+    pred_boundary_distmap = gp.ArrayKey('PRED_BOUNDARY_DISTMAP')
+
     pred_hardness = gp.ArrayKey('PRED_HARDNESS')
 
     if cfg.dataset.enable_mask:
-        labels_mask = gp.ArrayKey('GT_LABELS_MASK')
+        gt_labels_mask = gp.ArrayKey('GT_LABELS_MASK')
         gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
     else:
-        labels_mask = None
+        gt_labels_mask = None
         gt_affs_mask = None
 
     voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
@@ -188,21 +193,13 @@ def train(cfg: DictConfig) -> None:
 
     trainer_inputs = {'input': raw}
     trainer_outputs = {
-        # 'pred_lsds': pred_lsds,
         'pred_affs': pred_affs,
-        # 'pred_boundaries': pred_boundaries,
-        # 'pred_hardness': pred_hardness,
     }
     trainer_loss_inputs = {
-        # 'pred_lsds': pred_lsds,
-        # 'gt_lsds': gt_lsds,
-        # 'lsds_weights': lsds_weights,
         'pred_affs': pred_affs,
         'gt_affs': gt_affs,
         'affs_weights': affs_weights,
-        # 'pred_hardness': pred_hardness,
-        # 'pred_boundaries': pred_boundaries,
-        # 'gt_boundaries': gt_boundaries,
+        'gt_labels_mask': gt_labels_mask,
     }
 
     request = gp.BatchRequest()
@@ -226,12 +223,18 @@ def train(cfg: DictConfig) -> None:
         trainer_outputs['pred_boundaries'] = trainer_loss_inputs['pred_boundaries'] = pred_boundaries
         trainer_loss_inputs['gt_boundaries'] = gt_boundaries
 
+    if boundary_distmaps_enabled:
+        request.add(gt_boundary_distmap, output_size)
+        request.add(pred_boundary_distmap, output_size)
+        trainer_outputs['pred_boundary_distmap'] = trainer_loss_inputs['pred_boundary_distmap'] = pred_boundary_distmap
+        trainer_loss_inputs['gt_boundary_distmap'] = gt_boundary_distmap
+
     if hardness_enabled:
         request.add(pred_hardness, output_size)
         trainer_outputs['pred_hardness'] = trainer_loss_inputs['pred_hardness'] = pred_hardness
 
     if cfg.dataset.enable_mask:
-        request.add(labels_mask, output_size)
+        request.add(gt_labels_mask, output_size)
         request.add(gt_affs_mask, output_size)
 
     source_data_dict = {
@@ -246,8 +249,8 @@ def train(cfg: DictConfig) -> None:
     if cfg.dataset.labels_padding is not None:
         labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
     if cfg.dataset.enable_mask:
-        source_data_dict[labels_mask] = cfg.dataset.mask_name
-        source_array_specs[labels_mask] = gp.ArraySpec(interpolatable=False)
+        source_data_dict[gt_labels_mask] = cfg.dataset.mask_name
+        source_array_specs[gt_labels_mask] = gp.ArraySpec(interpolatable=False)
 
     sources = []
 
@@ -263,10 +266,10 @@ def train(cfg: DictConfig) -> None:
         if cfg.dataset.labels_padding is not None:
             src += gp.Pad(labels, labels_padding)
         if cfg.dataset.enable_mask and cfg.dataset.labels_padding is not None:
-            src += gp.Pad(labels_mask, labels_padding)
+            src += gp.Pad(gt_labels_mask, labels_padding)
         if cfg.dataset.enable_mask:
             # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine. TODO: get ratio from cfg.dataset
-            src += gp.RandomLocation(min_masked=0.5, mask=labels_mask)
+            src += gp.RandomLocation(min_masked=0.4, mask=gt_labels_mask)
         else:
             src += gp.RandomLocation()
         sources.append(src)
@@ -278,15 +281,16 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.RandomProvider()
 
-    pipeline += gp.ElasticAugment(
-        control_point_spacing=[4, 4, 10],
-        jitter_sigma=[0, 2, 2],
-        rotation_interval=[0, np.pi / 2.0],
-        prob_slip=0.05,
-        prob_shift=0.05,
-        max_misalign=10,
-        subsample=8,
-    )
+    if cfg.augmentations.enable_elastic:
+        pipeline += gp.ElasticAugment(
+            control_point_spacing=[4, 4, 10],
+            jitter_sigma=[0, 2, 2],
+            rotation_interval=[0, np.pi / 2.0],
+            prob_slip=0.05,
+            prob_shift=0.05,
+            max_misalign=10,
+            subsample=8,
+        )
 
     pipeline += gp.SimpleAugment(transpose_only=[1, 2])  # TODO: rot90
 
@@ -301,7 +305,7 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.GrowBoundary(
         labels,
-        mask=labels_mask,
+        mask=gt_labels_mask,
         steps=1,
         only_xy=True
     )
@@ -311,6 +315,17 @@ def train(cfg: DictConfig) -> None:
             instance_labels=labels,
             boundary_labels=gt_boundaries,
             # dtype=np.int64,
+        )
+
+    if boundary_distmaps_enabled:
+        pipeline += AddDistMap(
+            instance_labels=labels,
+            distmap=gt_boundary_distmap,
+            vector_enabled=False,
+            inverted=True,
+            signed=True,
+            scale=50,
+            dtype=np.float32,
         )
 
     if lsd_enabled:
@@ -328,7 +343,7 @@ def train(cfg: DictConfig) -> None:
         affinity_neighborhood=neighborhood,
         labels=labels,
         affinities=gt_affs,
-        labels_mask=labels_mask,
+        labels_mask=gt_labels_mask,
         affinities_mask=gt_affs_mask,
         dtype=np.float32
     )
@@ -375,7 +390,7 @@ def train(cfg: DictConfig) -> None:
 
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
 
-    # pipeline += gp.PrintProfilingStats(every=10)
+    pipeline += gp.PrintProfilingStats(every=10)
 
     # Write tensorboard logs into common parent folder for all trainings for easier comparison
     # tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
@@ -487,6 +502,13 @@ def train(cfg: DictConfig) -> None:
                     # pred_boundaries_fig = wandb.Image(pred_boundaries_slice)
                     tr_imgs_wandb.update({
                         'training/images/pred_boundaries': pred_boundaries_fig,
+                    })
+
+                if boundary_distmaps_enabled:
+                    pred_boundary_distmap_slice = get_zslice(batch[pred_boundary_distmap].data[0])
+                    pred_boundary_distmap_fig = get_mpl_imshow_fig(pred_boundary_distmap_slice)
+                    tr_imgs_wandb.update({
+                        'training/images/pred_boundary_distmap': pred_boundary_distmap_fig,
                     })
 
                 loss_maps = compute_loss_maps(

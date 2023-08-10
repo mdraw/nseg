@@ -17,7 +17,7 @@ v: v1
 roi: 11_micron
 
 # Get setup name from custom OmegaConf / NConf resolver based on model path
-setup: ${setupname:${i1_predict.model_path}}_${roi}_p
+setup: ${setupname:${i1_predict.model_path}}_${roi}_j
 
 output_dir : ${path_prefix}/${v}/inference/${setup}
 
@@ -77,15 +77,14 @@ common:
   mask_dataset: volumes/neuropil_mask
   affs_dataset: /volumes/pred_affs
   fragments_dataset: /volumes/fragments
-  seg_dataset: volumes/segmentation_40  # TODO
+  seg_dataset: volumes/segmentation_jjj
 
   run_type: ${common.roi}_roi_masked
-  edges_collection: edges_hist_quant_75
-
+  edges_collection: edges_${i3_agglomerate.merge_function}
 
 
 i1_predict:
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_201000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_155000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=28", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -143,5 +142,5 @@ i5_evaluate_annotations:
 i6_extract_segmentation:
   # 8 workers with block_size 36000^3 need at least 230 GB RAM just for loading fragments
   num_workers: 8
-  block_size: [28800, 28800, 28800]  # override block_size because larger blocks make more sense here
+  block_size: [21600, 21600, 21600]  # override block_size because larger blocks make more sense here
   threshold: 0.4

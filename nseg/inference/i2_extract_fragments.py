@@ -166,8 +166,9 @@ def extract_fragments(
         affs.roi,
         affs.voxel_size,
         np.uint64,
-        daisy.Roi((0,0,0), block_size),
-        compressor={'id': 'zlib', 'level':5})
+        daisy.Roi((0, 0, 0), block_size),
+        compressor={'id': 'zstd', 'level': 5},
+    )
 
     context = daisy.Coordinate(context)
     total_roi = affs.roi.grow(context, context)

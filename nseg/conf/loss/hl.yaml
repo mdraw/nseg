@@ -10,6 +10,7 @@ init_kwargs:
     aff: 1.0
     lsd: 1.0
     bce: 0.5
+    bdt: 1.0
     hardness: 0.1
 
 #    bdc: 0.5  # TODO: boundary dice coefficient loss

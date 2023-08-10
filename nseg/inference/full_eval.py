@@ -62,7 +62,7 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
     if 'i6' in jobs_to_run:
         gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC
         t0 = time.time()
-        logging.basicConfig(**get_logging_kwargs(hydra_run_dir / 'i6_extract_segmentation.log'))
+        logging.basicConfig(**get_logging_kwargs(hydra_run_dir / 'i6_extract_segmentation_blosc_zstd.log'))
         logging.info('Running i6_extract_segmentation')
         i6_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_extract_segmentation'])
         i6_extract_segmentation.extract_segmentation(**i6_dict_cfg)
