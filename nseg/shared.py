@@ -140,8 +140,10 @@ class HardnessEnhancedLoss(torch.nn.Module):
         return masked_loss
 
     def _compute_hardness_loss_map(
-            self, pred_hardness: Optional[torch.Tensor], seg_loss_map: torch.Tensor
-    ) -> torch.Tensor:
+            self, pred_hardness: Optional[torch.Tensor], seg_loss_map: Optional[torch.Tensor]
+    ) -> torch.Tensor | float:
+        if seg_loss_map is None:
+            return 0.
         if pred_hardness is None:
             return torch.zeros_like(seg_loss_map)
         # Detach from graph so the hardness gradient does not backpropagate to the
@@ -219,7 +221,7 @@ class HardnessEnhancedLoss(torch.nn.Module):
             bce_loss_map = self._compute_bce_map(pred_boundaries, gt_boundaries, gt_labels_mask_weight)
             bce_loss_map = self._apply_hardness_weighting(bce_loss_map, pred_hardness)
             seg_loss_maps['bce'] = bce_loss_map
-        if self.loss_term_weights.get('bdt') != 0:
+        if self.loss_term_weights.get('bdt', 0) != 0:
             assert pred_boundary_distmap is not None and gt_boundary_distmap is not None
             # TODO: Mask weight
             bdt_loss_map = self._scaled_mse(pred_boundary_distmap, gt_boundary_distmap, gt_labels_mask_weight)
@@ -230,7 +232,9 @@ class HardnessEnhancedLoss(torch.nn.Module):
         #     print(f'{k}: {v.shape}')
         return seg_loss_maps
 
-    def _combine_seg_loss_maps(self, seg_loss_maps: dict[str, torch.Tensor], exclude: Optional[Sequence[str]] = None) -> torch.Tensor:
+    def _combine_seg_loss_maps(self, seg_loss_maps: dict[str, torch.Tensor], exclude: Optional[Sequence[str]] = None) -> Optional[torch.Tensor]:
+        if not seg_loss_maps:
+            return None
         combined_seg_loss_map = 0.
         for loss_name, loss_map in seg_loss_maps.items():
             if exclude is None or loss_name not in exclude:
@@ -270,6 +274,7 @@ class HardnessEnhancedLoss(torch.nn.Module):
         total_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps)
 
         # Disregard LSD because of masking issues
+        # Also experimentally disregard affs # TODO
         total_hardness_relevant_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps, exclude=['lsd'])
 
         # hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
@@ -307,17 +312,18 @@ class WeightedMSELoss(torch.nn.MSELoss):
 
     def forward(
             self,
-            lsds_prediction,
-            lsds_target,
+            pred_lsds,
+            gt_lsds,
             lsds_weights,
-            affs_prediction,
-            affs_target,
+            pred_affs,
+            gt_affs,
             affs_weights,
+            **_,  # gobble
     ):
 
         # calc each loss and combine
-        loss1 = self._calc_loss(lsds_prediction, lsds_target, lsds_weights)
-        loss2 = self._calc_loss(affs_prediction, affs_target, affs_weights)
+        loss1 = self._calc_loss(pred_lsds, gt_lsds, lsds_weights)
+        loss2 = self._calc_loss(pred_affs, gt_affs, affs_weights)
 
         return loss1 + loss2
 
@@ -742,7 +748,7 @@ class HardnessEnhancedMtlsdModel(torch.nn.Module):
         self.lsd_fc = lsd_fc
         self.aff_fc = aff_fc
         self.boundary_fc = boundary_fc
-        boundary_distmap_fc = boundary_distmap_fc
+        self.boundary_distmap_fc = boundary_distmap_fc
         self.hardness_fc = hardness_fc
         self.finalize_hardness_kwargs = {} if finalize_hardness_kwargs is None else finalize_hardness_kwargs
         self.register_module('backbone', backbone)

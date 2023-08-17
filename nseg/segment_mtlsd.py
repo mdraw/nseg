@@ -804,11 +804,11 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
 
     # eval_loss = loss_f(
     eval_loss = WeightedMSELoss()(
-        lsds_prediction=torch.as_tensor(cropped_pred_lsds),
-        lsds_target=torch.as_tensor(gt_lsds),
+        pred_lsds=torch.as_tensor(cropped_pred_lsds),
+        gt_lsds=torch.as_tensor(gt_lsds),
         lsds_weights=torch.as_tensor(lsds_weights),
-        affs_prediction=torch.as_tensor(cropped_pred_affs),
-        affs_target=torch.as_tensor(gt_affs),
+        pred_affs=torch.as_tensor(cropped_pred_affs),
+        gt_affs=torch.as_tensor(gt_affs),
         affs_weights=torch.as_tensor(affs_weights),
         # hardness_prediction=torch.as_tensor(cropped_pred_hardness),
     ).item()

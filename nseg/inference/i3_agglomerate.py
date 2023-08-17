@@ -217,10 +217,11 @@ def start_worker(
 
     daisy.call(base_command, log_out=log_out, log_err=log_err)
 
+
 def check_block(blocks_agglomerated, block):
-
-    done = blocks_agglomerated.count({'block_id': block.block_id}) >= 1
-
+    # Optimized query that does not require a full scan of the collection
+    done = blocks_agglomerated.find_one({'block_id': block.block_id}) is not None
+    # assert done == blocks_agglomerated.count({'block_id': block.block_id}) >= 1  # Check against original query
     return done
 
 

@@ -286,11 +286,13 @@ def start_worker(
 
     daisy.call(base_command, log_out=log_out, log_err=log_err)
 
+
 def check_block(blocks_extracted, block):
-
-    done = blocks_extracted.count({'block_id': block.block_id}) >= 1
-
+    # Optimized query that does not require a full scan of the collection
+    done = blocks_extracted.find_one({'block_id': block.block_id}) is not None
+    # assert done == blocks_agglomerated.count({'block_id': block.block_id}) >= 1  # Check against original query
     return done
+
 
 @hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:

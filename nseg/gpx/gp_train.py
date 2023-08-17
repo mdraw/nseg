@@ -288,16 +288,18 @@ class Train(GenericTrain):
         else:
             self.active_model = self.model
 
-    def to_device_tensor_dict(self, np_array_dict: dict[str, np.ndarray]) -> dict[str, torch.Tensor]:
+    def to_device_tensor_dict(self, arr_dict: dict[str, np.ndarray | torch.Tensor]) -> dict[str, torch.Tensor]:
         """ Optimized data copying of np.ndarrays to CUDA PyTorch tensors """
         device_tensors = {}
-        for key, np_array in np_array_dict.items():
-            torch_tensor = torch.as_tensor(np_array)
-            if self.device.type == 'cuda':
-                # Use cuda-specific memory pinning for faster transfer
-                torch_tensor = torch_tensor.pin_memory(device=self.device)
-            torch_tensor = torch_tensor.to(device=self.device, non_blocking=True)
-            device_tensors[key] = torch_tensor
+        for key, arr in arr_dict.items():
+            if isinstance(arr, np.ndarray):
+                arr = torch.as_tensor(arr)
+                if self.device.type == 'cuda':
+                    # Use cuda-specific memory pinning for faster transfer
+                    # torch_tensor = torch_tensor.pin_memory(device=self.device)
+                    arr = arr.pin_memory()
+            arr = arr.to(device=self.device, non_blocking=True)
+            device_tensors[key] = arr
         return device_tensors
 
     def train_step(self, batch, request):

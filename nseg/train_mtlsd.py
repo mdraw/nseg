@@ -1,6 +1,15 @@
 # Based on https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/train_mtlsd.ipynb
 
+import multiprocessing
+multiprocessing.set_start_method('spawn', True)
+# multiprocessing.set_start_method('forkserver', True)
+
+# import torch
+# torch.multiprocessing.set_start_method('spawn', True)
+
 import os
+from unittest.mock import MagicMock
+
 
 # Make sure we're not multithreading because we already use one process per CPU core in training
 #  See https://stackoverflow.com/a/53224849
@@ -26,6 +35,7 @@ from torch.utils import tensorboard
 from tqdm import tqdm
 
 import wandb
+# wandb = MagicMock()
 
 # from params import input_size, output_size, voxel_size
 from nseg.segment_mtlsd import eval_cubes, get_mean_report, get_per_cube_metrics, spatial_center_crop_nd
@@ -34,7 +44,9 @@ from nseg.gpx.gp_train import Train
 from nseg.gpx.gp_sources import ZarrSource
 from nseg.gpx.gp_boundaries import AddBoundaryLabels
 from nseg.gpx.gp_distmaps import AddDistMap
+from nseg.gpx.gp_tensor import Cast, ToTorch, ToNumpy
 from nseg.conf import NConf, DictConfig, hydra
+from omegaconf.errors import ConfigAttributeError
 
 
 
@@ -109,16 +121,22 @@ def train(cfg: DictConfig) -> None:
 
     # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)
     # Note that aff(inity) is always included as it's necessary for segmentation
-    loss_term_weights = cfg.loss.init_kwargs.loss_term_weights
-    nonzero_loss_term_weights = {
-        k: v for k, v in loss_term_weights.items() if v != 0 and v is not None
-    }
-    nonzero_loss_term_names = list(nonzero_loss_term_weights.keys())
+    try:
+        loss_term_weights = cfg.loss.init_kwargs.loss_term_weights
+        nonzero_loss_term_weights = {
+            k: v for k, v in loss_term_weights.items() if v != 0 and v is not None
+        }
+        nonzero_loss_term_names = list(nonzero_loss_term_weights.keys())
+    except ConfigAttributeError:
+        # Missing loss term config -> fall back to lsd and aff (original LSD loss)
+        nonzero_loss_term_names = ['lsd', 'aff']
 
     lsd_enabled = 'lsd' in nonzero_loss_term_names
     boundaries_enabled = 'bce' in nonzero_loss_term_names or 'bcd' in nonzero_loss_term_names
     boundary_distmaps_enabled = 'bdt' in nonzero_loss_term_names
     hardness_enabled = 'hardness' in nonzero_loss_term_names
+
+    float_dtype = np.float32
 
     val_root = cfg.dataset.val_root
     if val_root is None:
@@ -261,7 +279,8 @@ def train(cfg: DictConfig) -> None:
             source_array_specs,
             in_memory=cfg.dataset.in_memory,
         )
-        src += gp.Normalize(raw)
+        src += gp.Normalize(raw, dtype=np.float32)
+        # src += gp.Normalize(raw, dtype=float_dtype)
         src += gp.Pad(raw, None)
         if cfg.dataset.labels_padding is not None:
             src += gp.Pad(labels, labels_padding)
@@ -269,7 +288,7 @@ def train(cfg: DictConfig) -> None:
             src += gp.Pad(gt_labels_mask, labels_padding)
         if cfg.dataset.enable_mask:
             # TODO: min_masked=0.5 causes freezing/extreme slowdown. 0.3 or 0.4 work fine. TODO: get ratio from cfg.dataset
-            src += gp.RandomLocation(min_masked=0.4, mask=gt_labels_mask)
+            src += gp.RandomLocation(min_masked=0.5, mask=gt_labels_mask)
         else:
             src += gp.RandomLocation()
         sources.append(src)
@@ -282,9 +301,11 @@ def train(cfg: DictConfig) -> None:
     pipeline += gp.RandomProvider()
 
     if cfg.augmentations.enable_elastic:
+        # TODO: Is control_point_spacing accidentally xyz instead of zyx?
         pipeline += gp.ElasticAugment(
-            control_point_spacing=[4, 4, 10],
-            jitter_sigma=[0, 2, 2],
+            control_point_spacing=(4, 4, 10),
+            # control_point_spacing=[10, 4, 4],
+            jitter_sigma=(0, 2, 2),
             rotation_interval=[0, np.pi / 2.0],
             prob_slip=0.05,
             prob_shift=0.05,
@@ -314,7 +335,8 @@ def train(cfg: DictConfig) -> None:
         pipeline += AddBoundaryLabels(
             instance_labels=labels,
             boundary_labels=gt_boundaries,
-            # dtype=np.int64,
+            dtype=np.int64,
+            # dtype=np.uint8,  # TODO: torch._C._nn.cross_entropy_loss fails on uint8 targets
         )
 
     if boundary_distmaps_enabled:
@@ -325,7 +347,7 @@ def train(cfg: DictConfig) -> None:
             inverted=True,
             signed=True,
             scale=50,
-            dtype=np.float32,
+            dtype=float_dtype,
         )
 
     if lsd_enabled:
@@ -334,6 +356,7 @@ def train(cfg: DictConfig) -> None:
             labels,
             gt_lsds,
             lsds_mask=lsds_weights,
+            dtype=float_dtype,
             **cfg.labels.lsd
         )
 
@@ -345,7 +368,7 @@ def train(cfg: DictConfig) -> None:
         affinities=gt_affs,
         labels_mask=gt_labels_mask,
         affinities_mask=gt_affs_mask,
-        dtype=np.float32
+        dtype=float_dtype
     )
 
     # TODO: Replace by global label balancing.
@@ -355,9 +378,13 @@ def train(cfg: DictConfig) -> None:
         gt_affs_mask,
     )
 
+    # pipeline += Cast(labels, dtype=np.uint8)
+
     pipeline += gp.Unsqueeze([raw])
 
     pipeline += gp.Stack(cfg.training.batch_size)
+
+    # pipeline += ToTorch()
 
     if num_workers > 0:
         pipeline += gp.PreCache(cache_size=40, num_workers=num_workers)
@@ -388,13 +415,15 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += trainer
 
+    pipeline += ToNumpy()
+
     # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
 
-    pipeline += gp.PrintProfilingStats(every=10)
+    pipeline += gp.PrintProfilingStats(every=cfg.training.save_every)
 
     # Write tensorboard logs into common parent folder for all trainings for easier comparison
     # tb = tensorboard.SummaryWriter(save_path.parent / "logs" / save_path.name)
-    tb = tensorboard.SummaryWriter(save_path / "logs")
+    # tb = tensorboard.SummaryWriter(save_path / "logs")
 
     wandb.init(config=_cfg_dict, **cfg.wandb.init_cfg)
     # Root directory where recursive code file discovery should start
@@ -416,9 +445,9 @@ def train(cfg: DictConfig) -> None:
             end = request[labels].roi.get_end() / voxel_size
             # Determine if/how much we should log this iteration
             _full_eval_now = (i + 1) % save_every == 0 or cfg.training.first_eval_at_step == i + 1
-            _loss_log_now = _full_eval_now or (i + 1) % 10
+            _loss_log_now = _full_eval_now or (i + 1) % 100 == 0
             if _loss_log_now:
-                tb.add_scalar("loss", batch.loss, batch.iteration)
+                # tb.add_scalar("loss", batch.loss, batch.iteration)
                 wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
             if _full_eval_now:
                 logging.info(
@@ -508,22 +537,23 @@ def train(cfg: DictConfig) -> None:
                     pred_boundary_distmap_slice = get_zslice(batch[pred_boundary_distmap].data[0])
                     pred_boundary_distmap_fig = get_mpl_imshow_fig(pred_boundary_distmap_slice)
                     tr_imgs_wandb.update({
-                        'training/images/pred_boundary_distmap': pred_boundary_distmap_fig,
+                        'training/images/boundary_distmap': pred_boundary_distmap_fig,
                     })
 
-                loss_maps = compute_loss_maps(
-                    loss_module=loss,
-                    batch=batch,
-                    loss_inputs_gpkeys=trainer.loss_inputs,
-                    device=trainer.device
-                )
-                loss_maps = prefixkeys(loss_maps, 'training/images/loss_maps/')
+                if hasattr(loss, 'compute_seg_loss_maps') and hasattr(loss, '_combine_seg_loss_maps'):
+                    loss_maps = compute_loss_maps(
+                        loss_module=loss,
+                        batch=batch,
+                        loss_inputs_gpkeys=trainer.loss_inputs,
+                        device=trainer.device
+                    )
+                    loss_maps = prefixkeys(loss_maps, 'training/images/loss_maps/')
 
-                loss_maps_z_figs = {
-                    k: get_mpl_imshow_fig(get_zslice(v[0]))
-                    for k, v in loss_maps.items()
-                }
-                tr_imgs_wandb.update(loss_maps_z_figs)
+                    loss_maps_z_figs = {
+                        k: get_mpl_imshow_fig(get_zslice(v[0]))
+                        for k, v in loss_maps.items()
+                    }
+                    tr_imgs_wandb.update(loss_maps_z_figs)
 
                 wandb.log(
                     tr_imgs_wandb,

@@ -17,7 +17,7 @@ v: v1
 roi: 11_micron
 
 # Get setup name from custom OmegaConf / NConf resolver based on model path
-setup: ${setupname:${i1_predict.model_path}}_${roi}_j
+setup: ${setupname:${i1_predict.model_path}}_${roi}
 
 output_dir : ${path_prefix}/${v}/inference/${setup}
 
@@ -77,17 +77,17 @@ common:
   mask_dataset: volumes/neuropil_mask
   affs_dataset: /volumes/pred_affs
   fragments_dataset: /volumes/fragments
-  seg_dataset: volumes/segmentation_jjj
+  seg_dataset: volumes/segmentation
 
   run_type: ${common.roi}_roi_masked
   edges_collection: edges_${i3_agglomerate.merge_function}
 
 
 i1_predict:
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-03_19-26_poached-silver_u3_hl_ss8/model_checkpoint_155000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-10_04-06_blocky-wolf_bdt_no_oobmask/model_checkpoint_400000.pt
 
   num_workers: 100
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=100G", "--cpus-per-task=28", "--gres=gpu:1", "--job-name=ns01pr"]
+  slurm_options: ["--ntasks=1", "--time=7-0", "--mem=500G", "--cpus-per-task=32", "--gres=gpu:1", "--job-name=ns01pr"]
 
   # net_input_shape: [84, 268, 268]
 #  net_input_shape: [96, 484, 484]
@@ -102,26 +102,39 @@ i1_predict:
     pred_boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
     pred_hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   0.5}
 
+## Known to work, fall back if something breaks
+#i2_extract_fragments:
+#  num_workers: 100
+#  fragments_in_xy: True
+#  epsilon_agglomerate: 0.1
+#  filter_fragments: 0.05
+#  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=200G", "--cpus-per-task=30", "--job-name=ns02ex"]
 
 i2_extract_fragments:
-  num_workers: 100
+  num_workers: 200
   fragments_in_xy: True
   epsilon_agglomerate: 0.1
   filter_fragments: 0.05
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=200G", "--cpus-per-task=28", "--job-name=ns02ex"]
+  slurm_options: ["--ntasks=1", "--time=7-0", "--mem=250G", "--cpus-per-task=16", "--job-name=ns02ex"]
 
+## Known to work, fall back if something breaks
+#i3_agglomerate:
+#  num_workers: 100
+#  merge_function: hist_quant_75
+#  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=400G", "--cpus-per-task=30", "--job-name=ns03ag"]
 
 i3_agglomerate:
-  num_workers: 64
+  num_workers: 100
   merge_function: hist_quant_75
-  slurm_options: ["--ntasks=1", "--time=1-0", "--mem=400G", "--cpus-per-task=28", "--job-name=ns03ag"]
+  slurm_options: ["--ntasks=1", "--time=7-0", "--mem=500G", "--cpus-per-task=32", "--job-name=ns03ag"]
+#  slurm_options: ["--ntasks=1", "--time=7-0", "--mem=250G", "--cpus-per-task=16", "--job-name=ns03ag"]
 
 
 i4_find_segments:
   num_workers: 32
-  thresholds_minmax: [0, 1]
-#  thresholds_step: 0.02
-  thresholds_step: 0.2
+  thresholds_minmax: [0.0, 0.11]
+  thresholds_step: 0.01
+#  thresholds_step: 0.04
 
 i5_evaluate_annotations:
   num_workers: 8
@@ -136,11 +149,13 @@ i5_evaluate_annotations:
   node_mask: zebrafinch_mask
   # roi_offset: [4000, 7200, 4500]  # benchmark_roi
   # roi_shape: [106000, 83700, 87300]  # benchmark_roi
-  thresholds_minmax: [0.4, 1]
-  thresholds_step: 1
+#  thresholds_minmax: [0.4, 1]
+#  thresholds_step: 1
+  thresholds_minmax: [0.0, 0.11]
+  thresholds_step: 0.01
 
 i6_extract_segmentation:
   # 8 workers with block_size 36000^3 need at least 230 GB RAM just for loading fragments
   num_workers: 8
   block_size: [21600, 21600, 21600]  # override block_size because larger blocks make more sense here
-  threshold: 0.4
+  threshold: 0.02

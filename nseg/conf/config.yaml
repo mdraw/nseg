@@ -2,7 +2,7 @@
 defaults:
   - model: hl_unet
   - loss: hl
-  - dataset: j0126_v2_c350
+  - dataset: j0126_v2_nocrop
   - data_prep: v2
   - knossos_raw_to_zarr: default
   - cloudvolume_raw_to_zarr: default
@@ -82,14 +82,14 @@ augmentations:
 
 training:
   iterations: 400001
-  save_every: 1000
+  save_every: 5000
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
   first_eval_at_step: 11
 
   ## Performance options
 
-  # num_workers: auto
+#  num_workers: auto
 #  num_workers: 0
   num_workers: 32
 #  num_workers: 2
@@ -139,8 +139,8 @@ eval:
     pred_affs: { idx: 1, out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
     pred_lsds: { idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
     # TODO: More concise output cfg
-    pred_boundaries: { idx: 2, out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
-    pred_hardness: { idx: 3, out_dims: 1, out_dtype: float32, squeeze: true, scale: 0.5 }
+#    pred_boundaries: { idx: 2, out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
+#    pred_hardness: { idx: 3, out_dims: 1, out_dtype: float32, squeeze: true, scale: 0.5 }
 
   # roi_shape: [250, 250, 250]
   roi_shape: null

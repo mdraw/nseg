@@ -14,4 +14,3 @@ init_kwargs:
     hardness: 0.1
 
 #    bdc: 0.5  # TODO: boundary dice coefficient loss
-#    bdt: 1.0  # TODO: boundary distance transform loss

@@ -84,7 +84,6 @@ def agglomerate_worker(input_config):
                 threshold=1.0)
 
         document = {
-            'num_cpus': 5,
             'block_id': block.block_id,
             'read_roi': (block.read_roi.get_begin(), block.read_roi.get_shape()),
             'write_roi': (block.write_roi.get_begin(), block.write_roi.get_shape()),

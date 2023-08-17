@@ -42,7 +42,7 @@ funlib.evaluate @ git+https://github.com/funkelab/funlib.evaluate.git@d2852b3559
 # Use my own forks of these libraries because they contain necessary fixes.
 lsds @ git+https://github.com/mdraw/lsd.git@fix-fragment-agglo
 waterz @ git+https://github.com/mdraw/waterz.git@80d5f0dd21d84f236371f3dbee9a49fab616168c
-gunpowder @ git+https://github.com/mdraw/gunpowder.git@2702ef294bf40ff9aa687df48b95c66288710ab7
+gunpowder @ git+https://github.com/mdraw/gunpowder.git@3938032fada2c7e5af68fcadfbfea2b6c2d46cd5
 
 # For some training functions
 elektronn3 @ git+https://github.com/ELEKTRONN/elektronn3.git@01e55c5e9d6baf7da9dbcf790d68deff1132a8db

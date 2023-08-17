@@ -1,5 +1,5 @@
 tr_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_nocrop/training/
-val_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_nocrop/validation/
+val_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_nocrop/validation_c350/
 
 raw_name: volumes/raw
 gt_name: volumes/labels/neuron_ids

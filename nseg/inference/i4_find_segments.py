@@ -103,7 +103,9 @@ def find_segments(
         position_attribute=[
             'center_z',
             'center_y',
-            'center_x'])
+            'center_x'],
+        keep_db_connection=False,
+    )
 
     if fragments_dataset:
         fragments = daisy.open_ds(fragments_file, fragments_dataset)

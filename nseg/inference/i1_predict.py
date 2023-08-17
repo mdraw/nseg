@@ -293,11 +293,13 @@ def predict_worker(
 
     logging.info('Predict worker finished')
 
+
 def check_block(blocks_predicted, block):
-
-    done = blocks_predicted.count({'block_id': block.block_id}) >= 1
-
+    # Optimized query that does not require a full scan of the collection
+    done = blocks_predicted.find_one({'block_id': block.block_id}) is not None
+    # assert done == blocks_agglomerated.count({'block_id': block.block_id}) >= 1  # Check against original query
     return done
+
 
 @hydra.main(version_base='1.3', config_path='../conf/', config_name='inference_config')
 def main(cfg: DictConfig) -> None:
