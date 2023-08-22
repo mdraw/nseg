@@ -17,7 +17,8 @@ from nseg.inference import (
     i3_agglomerate,
     i4_find_segments,
     i5_evaluate_annotations,
-    i6_extract_segmentation
+    i6_extract_segmentation,
+    iutils,
 )
 
 
@@ -50,10 +51,13 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
         logging.info(f'i4_find_segments took {timedelta(seconds=time.time() - t0)}')
 
     # Collect best thresholds w.r.t. voi and erl on val and test
-    best_thresholds = {'voi': {}, 'erl': {}}
+    best_thresh_results = {'voi': {}, 'erl': {}}
+    thresh_results = {'voi': {}, 'erl': {}}
+
 
     if 'i5' in jobs_to_run:
-        for anno_name in dict_cfg['meta']['evaluate_on']:  # ['val', 'test']
+        anno_names = dict_cfg['meta']['evaluate_on']  # ['val', 'test']
+        for anno_name in anno_names:
             gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC
             t0 = time.time()
             i5_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_evaluate_annotations'])
@@ -69,12 +73,45 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
             evaluate = i5_evaluate_annotations.EvaluateAnnotations(**i5_dict_cfg)
             evaluate.evaluate()
 
-            best_thresholds['voi'][anno_name] = evaluate._best_voi_threshold
-            best_thresholds['erl'][anno_name] = evaluate._best_erl_threshold
+            best_thresh_results['voi'][anno_name] = evaluate._best_voi_threshold
+            best_thresh_results['erl'][anno_name] = evaluate._best_erl_threshold
+            thresh_results['voi'][anno_name] = evaluate._thresh_vois
+            thresh_results['erl'][anno_name] = evaluate._thresh_erls
 
-            # del evaluate
+            logging.info(f'i5_evaluate_annotations ({anno_name}) took {timedelta(seconds=time.time() - t0)}')
 
-            logging.info(f'i5_evaluate_annotations ({anno_name} took {timedelta(seconds=time.time() - t0)}')
+        logging.info(f'Best threshold configurations:\n{json.dumps(best_thresh_results, indent=4)}\n')
+        if 'val' in anno_names and 'test' in anno_names:
+            test_voi_on_best_val_threshold = thresh_results['voi']['test'][
+                best_thresh_results['voi']['val']
+            ]
+            test_erl_on_best_val_threshold = thresh_results['erl']['test'][
+                best_thresh_results['erl']['val']
+            ]
+
+            best_thresh_results['voi']['test_best_val_threshold'] = test_voi_on_best_val_threshold
+            best_thresh_results['erl']['test_best_val_threshold'] = test_erl_on_best_val_threshold
+
+            logging.info(f'Test VOI on best val threshold: {test_voi_on_best_val_threshold}')
+            logging.info(f'Test ERL on best val threshold: {test_erl_on_best_val_threshold}')
+
+            logging.info(f'Storing best threshold results in db')
+            iutils.store_document(
+                doc=best_thresh_results,
+                collection_name=dict_cfg['common']['setup'],
+                db_name='best_thresh_results',
+                db_host=dict_cfg['common']['db_host'],
+            )
+
+            # Convert all keys of nested dict to strings for db compat
+            thresh_results_doc = json.loads(json.dumps(thresh_results))
+
+            iutils.store_document(
+                doc=thresh_results_doc,
+                collection_name=dict_cfg['common']['setup'],
+                db_name='thresh_results',
+                db_host=dict_cfg['common']['db_host'],
+            )
 
     if 'i6' in jobs_to_run:
         gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC

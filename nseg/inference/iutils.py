@@ -1,6 +1,6 @@
 import numpy as np
 import zstandard
-
+import pymongo
 
 
 def np_savezstd(fp: str, level=5, *args, **kwargs):
@@ -26,3 +26,22 @@ def np_loadzstd(fp: str):
         return np.load(dctx.decompress(f.read()))
         # with dctx.stream_reader(f) as decomp:
         #     return numpy.load(decomp)
+
+
+def store_document(
+        doc: dict,
+        collection_name: str = '_sbxc',
+        db_name: str = '_sbxd',
+        db_host: str = 'cajalg001',
+        replace: bool = True,
+):
+    with pymongo.MongoClient(db_host) as client:
+        coll = client[db_name][collection_name]
+        if replace:
+            coll.replace_one(
+                {},
+                doc,
+                upsert=True,
+            )
+        else:
+            coll.insert_one(doc)

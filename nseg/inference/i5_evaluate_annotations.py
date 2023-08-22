@@ -230,6 +230,9 @@ class EvaluateAnnotations():
         self._best_voi_value: Optional[float] = None
         self._best_voi_threshold: Optional[float] = None
 
+        self._thresh_erls: dict[float, float] = {}
+        self._thresh_vois: dict[float, float] = {}
+
 
     def store_lut_in_block(self, block):
 
@@ -868,11 +871,13 @@ class EvaluateAnnotations():
                 site_segment_ids[self.synaptic_sites_mask])
 
         report = rand_voi_report.copy()
+        voi = report['voi']
+        self._thresh_vois[threshold] = voi
+        self._thresh_erls[threshold] = erl
 
         if self._best_erl_value is None or erl > self._best_erl_value:
             self._best_erl_value = erl
             self._best_erl_threshold = threshold
-        voi = report['voi']
         if self._best_voi_value is None or voi < self._best_voi_value:
             self._best_voi_value = voi
             self._best_voi_threshold = threshold
