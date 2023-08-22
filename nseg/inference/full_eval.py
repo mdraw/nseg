@@ -16,8 +16,8 @@ from nseg.inference import (
     i2_extract_fragments,
     i3_agglomerate,
     i4_find_segments,
-    i6_extract_segmentation,
-    i5_evaluate_annotations
+    i5_evaluate_annotations,
+    i6_extract_segmentation
 )
 
 
@@ -28,7 +28,7 @@ def get_logging_kwargs(log_file_path: Path) -> dict:
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler(log_file_path, mode='w'),
+            logging.FileHandler(log_file_path, mode='a'),
         ],
         force=True,
     )
@@ -49,23 +49,49 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
         i4_find_segments.find_segments(**i4_dict_cfg)
         logging.info(f'i4_find_segments took {timedelta(seconds=time.time() - t0)}')
 
+    # Collect best thresholds w.r.t. voi and erl on val and test
+    best_thresholds = {'voi': {}, 'erl': {}}
+
     if 'i5' in jobs_to_run:
-        gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC
-        t0 = time.time()
-        logging.basicConfig(**get_logging_kwargs(hydra_run_dir / 'i5_evaluate_annotations.log'))
-        logging.info('Running i5_evaluate_annotations')
-        i5_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_evaluate_annotations'])
-        evaluate = i5_evaluate_annotations.EvaluateAnnotations(**i5_dict_cfg)
-        evaluate.evaluate()
-        logging.info(f'i5_evaluate_annotations took {timedelta(seconds=time.time() - t0)}')
+        for anno_name in dict_cfg['meta']['evaluate_on']:  # ['val', 'test']
+            gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC
+            t0 = time.time()
+            i5_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i5_evaluate_annotations'])
+
+            # Set annotations_db and scores_db to val or test, depending on anno_name
+            annotations_db_name = i5_dict_cfg['annotations_db_names'][anno_name]
+            scores_db_name = i5_dict_cfg['scores_db_names'][anno_name]
+            i5_dict_cfg['annotations_db_name'] = annotations_db_name
+            i5_dict_cfg['scores_db_name'] = scores_db_name
+
+            logging.basicConfig(**get_logging_kwargs(hydra_run_dir / f'i5_evaluate_annotations_{anno_name}.log'))
+            logging.info(f'Running i5_evaluate_annotations ({anno_name}')
+            evaluate = i5_evaluate_annotations.EvaluateAnnotations(**i5_dict_cfg)
+            evaluate.evaluate()
+
+            best_thresholds['voi'][anno_name] = evaluate._best_voi_threshold
+            best_thresholds['erl'][anno_name] = evaluate._best_erl_threshold
+
+            # del evaluate
+
+            logging.info(f'i5_evaluate_annotations ({anno_name} took {timedelta(seconds=time.time() - t0)}')
 
     if 'i6' in jobs_to_run:
         gc.collect(); gc.collect(); gc.collect()  # Avoid OOM caused by lazy GC
         t0 = time.time()
-        logging.basicConfig(**get_logging_kwargs(hydra_run_dir / 'i6_extract_segmentation_blosc_zstd.log'))
+        logging.basicConfig(**get_logging_kwargs(hydra_run_dir / 'i6_extract_segmentation.log'))
         logging.info('Running i6_extract_segmentation')
         i6_dict_cfg = unwind_dict(dict_cfg, keys=['common', 'i6_extract_segmentation'])
+
+        # TODO: Get best thresholds from database
+        # TODO: Fail gracefully if best thresholds are not collected above
+        if i6_dict_cfg['threshold'] == 'best_voi':
+            i6_dict_cfg['threshold'] = best_thresholds['voi']['val']
+        elif i6_dict_cfg['threshold'] == 'best_erl':
+            i6_dict_cfg['threshold'] = best_thresholds['erl']['val']
+
         i6_extract_segmentation.extract_segmentation(**i6_dict_cfg)
+
         logging.info(f'i6_extract_segmentation took {timedelta(seconds=time.time() - t0)}')
 
 
@@ -108,7 +134,7 @@ def main(cfg: DictConfig) -> None:
     # i4..i6 are run locally, so they should be started on a dedicated compute node.
 
     if cfg.meta.run_i456_locally:
-        run_i456(dict_cfg)
+        run_i456(dict_cfg, hydra_run_dir=hydra_run_dir)
     else:
         executor = submitit.AutoExecutor(folder=hydra_run_dir / 'submitit')
         submitit_opts = NConf.to_container(cfg.meta.submitit_i456_options, resolve=True)

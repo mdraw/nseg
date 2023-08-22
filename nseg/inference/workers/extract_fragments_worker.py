@@ -94,7 +94,6 @@ def extract_fragments_worker(input_config):
             replace_sections=replace_sections)
 
         document = {
-            'num_cpus': 5,
             'block_id': block.block_id,
             'read_roi': (
                 block.read_roi.get_begin(),

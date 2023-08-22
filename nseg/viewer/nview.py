@@ -224,10 +224,10 @@ def get_layer_opts(dataset: str) -> dict:
     if dataset.endswith('hardness'):
         return {'shader': get_heatmap_shader(0, scale=1.)}
     if dataset.endswith('lsds'):
-        # return {'c': [0, 1, 2]}
+        return {'c': [0, 1, 2]}
         # return {'c': [3, 4, 5]}
         # return {'c': [6, 7, 8]}
-        return {'shader': get_heatmap_shader(9)}
+        # return {'shader': get_heatmap_shader(9)}
 
     return {}
 

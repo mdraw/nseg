@@ -117,7 +117,7 @@ def get_mpl_imshow_fig(img):
 def train(cfg: DictConfig) -> None:
     _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
-    tr_files = [str(fp) for fp in tr_root.glob('*.zarr')]
+    tr_files = sorted(list(tr_root.glob('*.zarr')))
 
     # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)
     # Note that aff(inity) is always included as it's necessary for segmentation
@@ -143,7 +143,7 @@ def train(cfg: DictConfig) -> None:
         val_files = []
     else:
         val_root = Path(val_root)
-        val_files = [str(fp) for fp in val_root.glob('*.zarr')]
+        val_files = sorted(list(val_root.glob('*.zarr')))
 
     # Get standard Python dict representation of NConf / omegaconf cfg (for wandb cfg logging)
     _cfg_dict = NConf.to_container(cfg, resolve=True, throw_on_missing=True)
@@ -207,7 +207,11 @@ def train(cfg: DictConfig) -> None:
     loss_init_kwargs = cfg.loss.get('init_kwargs', {})
     loss = loss_class(**loss_init_kwargs)
 
-    optimizer = torch.optim.Adam(lr=cfg.training.lr, params=model.parameters())
+    optimizer = torch.optim.Adam(
+        lr=cfg.training.lr,
+        betas=tuple(cfg.training.adam_betas),
+        params=model.parameters()
+    )
 
     trainer_inputs = {'input': raw}
     trainer_outputs = {
@@ -271,10 +275,11 @@ def train(cfg: DictConfig) -> None:
         source_array_specs[gt_labels_mask] = gp.ArraySpec(interpolatable=False)
 
     sources = []
+    sampling_weights_list = []
 
     for tr_file in tr_files:
         src = ZarrSource(
-            tr_file,
+            str(tr_file),
             source_data_dict,
             source_array_specs,
             in_memory=cfg.dataset.in_memory,
@@ -292,19 +297,27 @@ def train(cfg: DictConfig) -> None:
         else:
             src += gp.RandomLocation()
         sources.append(src)
+        sampling_weights = cfg.dataset.get('sampling_weights')
+        if sampling_weights is not None:
+            sw = sampling_weights.get(tr_file.name, 1)
+            sampling_weights_list.append(sw)
+            if sw != 1:
+                logging.info(f'Using sampling weight {sw} for {tr_file.name}')
+
 
     assert len(sources) > 0
     sources = tuple(sources)
 
     pipeline = sources
 
-    pipeline += gp.RandomProvider()
+    sampling_weights_list = sampling_weights_list if len(sampling_weights_list) > 0 else None
+    pipeline += gp.RandomProvider(probabilities=sampling_weights_list)
 
     if cfg.augmentations.enable_elastic:
         # TODO: Is control_point_spacing accidentally xyz instead of zyx?
         pipeline += gp.ElasticAugment(
             control_point_spacing=(4, 4, 10),
-            # control_point_spacing=[10, 4, 4],
+            # control_point_spacing=(10, 4, 4),
             jitter_sigma=(0, 2, 2),
             rotation_interval=[0, np.pi / 2.0],
             prob_slip=0.05,
@@ -384,6 +397,9 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += gp.Stack(cfg.training.batch_size)
 
+    pipeline += gp.IntensityScaleShift(raw, 2, -1)  # Rescale for training
+
+
     # pipeline += ToTorch()
 
     if num_workers > 0:
@@ -392,7 +408,6 @@ def train(cfg: DictConfig) -> None:
     if cfg.training.enable_cudnn_benchmark and torch.cuda.is_available():
         torch.backends.cudnn.benchmark = True
 
-    # pipeline += gp.IntensityScaleShift(raw, 2,-1)  # Rescale for training
 
     save_every = cfg.training.save_every
     trainer = Train(
@@ -415,9 +430,9 @@ def train(cfg: DictConfig) -> None:
 
     pipeline += trainer
 
-    pipeline += ToNumpy()
+    # pipeline += ToNumpy()
 
-    # pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
+    pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale for snapshot outputs
 
     pipeline += gp.PrintProfilingStats(every=cfg.training.save_every)
 
@@ -561,12 +576,13 @@ def train(cfg: DictConfig) -> None:
                     commit=False
                 )
 
+                checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                if not checkpoint_path.exists():
+                    # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
+                    trainer._save_model(save_state_dict=False)
+
                 if len(val_files) > 0:
 
-                    checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
-                    if not checkpoint_path.exists():
-                        # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
-                        trainer._save_model()
                     cube_eval_results = eval_cubes(cfg=cfg, checkpoint_path=checkpoint_path, enable_zarr_results=cfg.enable_zarr_results)
 
                     rand_voi_reports = {name: cube_eval_results[name].report for name in cube_eval_results.keys()}

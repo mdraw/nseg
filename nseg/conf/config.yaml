@@ -2,7 +2,7 @@
 defaults:
   - model: hl_unet
   - loss: hl
-  - dataset: j0126_v2_nocrop
+  - dataset: j0126_v2_2val
   - data_prep: v2
   - knossos_raw_to_zarr: default
   - cloudvolume_raw_to_zarr: default
@@ -51,7 +51,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg_hl5
+    project: nseg_hl6
     name: ${shortname}
     tags:
       - mtlsd
@@ -78,7 +78,7 @@ wandb:
 #      hardness: 0.01
 
 augmentations:
-  enable_elastic: false
+  enable_elastic: true
 
 training:
   iterations: 400001
@@ -103,6 +103,7 @@ training:
 
   batch_size: 1
   lr: 0.5e-4
+  adam_betas: [0.95, 0.999]
 
 #  batch_size: 8
 #  lr: 4.0e-4
@@ -129,7 +130,7 @@ eval:
   waterz_threshold_sweep_linspace: # [0.0, 0.2, 201]  # Don't use that on the test set
 
   merge_function: hist_quant_75
-  threshold: 0.01
+  threshold: 0.1
 #  threshold: 0.4
 
   # merge_function: mean

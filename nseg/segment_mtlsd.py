@@ -446,6 +446,9 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     pipeline = source
     pipeline += gp.Normalize(raw)
     # pipeline += gp.Unsqueeze([raw])
+
+    pipeline += gp.IntensityScaleShift(raw, 2, -1)  # Rescale/shift to training value range
+
     pipeline += gp.Stack(1)
 
     pipeline += predict
@@ -465,6 +468,8 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
         raw,
         *outputs_to_squeeze
     ])
+
+    pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale/shift back for snapshot outputs
 
     pipeline += scan
 
@@ -1058,7 +1063,12 @@ def predict_labeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | 
     # pipeline += gp.Unsqueeze([raw])
     pipeline += gp.Stack(1)
 
+    pipeline += gp.IntensityScaleShift(raw, 2, -1)  # Rescale/shift to training value range
+
     pipeline += predict
+
+    pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale/shift back for snapshot outputs
+
     pipeline += scan
     # pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
 

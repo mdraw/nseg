@@ -12,6 +12,7 @@ import sys
 import time
 
 import zarr
+from typing import NamedTuple, Optional
 from numcodecs import Zstd
 from funlib.segment.arrays import replace_values
 from funlib.evaluate import rand_voi, \
@@ -61,6 +62,7 @@ class EvaluateAnnotations():
             compute_mincut_metric=False,
             num_workers=4,
             enable_mp_eval=False,
+            store_stats=True,
             **_ # Gobble all other kwargs
     ):
 
@@ -192,6 +194,7 @@ class EvaluateAnnotations():
         self.node_mask = node_mask
         self.node_components = node_components
         self.run_type = run_type
+        self.store_stats = store_stats
 
         self.scores_db_host = edges_db_host if scores_db_host \
                 is None else scores_db_host
@@ -205,15 +208,12 @@ class EvaluateAnnotations():
         self.compute_mincut_metric = compute_mincut_metric
         self.num_workers = num_workers
 
+        logging.info(f"Evaluating against {self.annotations_db_name}")
         self.site_fragment_lut_directory = os.path.join(
             self.fragments_file,
-            'luts/site_fragment')
-
-        if self.run_type:
-            logging.info(f"Run type set, evaluating on {self.run_type} dataset")
-            self.site_fragment_lut_directory = os.path.join(
-                    self.site_fragment_lut_directory,
-                    self.run_type)
+            f'luts/site_fragment',
+            self.annotations_db_name
+        )
 
         logging.info("Path to site fragment luts: "
                 f"{self.site_fragment_lut_directory}")
@@ -224,6 +224,12 @@ class EvaluateAnnotations():
         except:
             self.fragments = daisy.open_ds(self.fragments_file,
                     self.fragments_dataset + '/s0')
+
+        self._best_erl_value: Optional[float] = None
+        self._best_erl_threshold: Optional[float] = None
+        self._best_voi_value: Optional[float] = None
+        self._best_voi_threshold: Optional[float] = None
+
 
     def store_lut_in_block(self, block):
 
@@ -402,7 +408,7 @@ class EvaluateAnnotations():
         logging.info(f"Reading components from: {self.node_components}")
 
         # get all skeletons
-        logging.info("Fetching all skeletons...")
+        logging.info(f"Fetching all skeletons from db {self.annotations_db_name} ...")
         skeletons_provider = daisy.persistence.MongoDbGraphProvider(
             self.annotations_db_name,
             self.annotations_db_host,
@@ -477,6 +483,10 @@ class EvaluateAnnotations():
             for threshold in thresholds:
                 self.evaluate_threshold(threshold)
 
+        logging.info(f'Finished evaluation against {self.annotations_db_name}.')
+        logging.info(f'Best ERL: {self._best_erl_value} at threshold {self._best_erl_threshold}')
+        logging.info(f'Best VOI: {self._best_voi_value} at threshold {self._best_voi_threshold}')
+
     def get_site_segment_ids(self, threshold):
 
         # get fragment-segment LUT
@@ -535,7 +545,6 @@ class EvaluateAnnotations():
                 node_segment_lut=node_segment_lut,
                 skeleton_lengths=self.skeleton_lengths,
                 return_merge_split_stats=True)
-
         perfect_lut = {
                 node: data['component_id'] for node, data in \
                         self.skeletons.nodes(data=True)
@@ -796,11 +805,11 @@ class EvaluateAnnotations():
             np.array([[site_segment_ids]]),
             return_cluster_scores=return_cluster_scores)
 
-        rand_voi_report['voi_sum'] = rand_voi_report['voi_split'] + rand_voi_report['voi_merge']
+        rand_voi_report['voi'] = rand_voi_report['voi_split'] + rand_voi_report['voi_merge']
 
         logging.info(f"VOI split: {rand_voi_report['voi_split']}")
         logging.info(f"VOI merge: {rand_voi_report['voi_merge']}")
-        logging.info(f"VOI sum: {rand_voi_report['voi_sum']}")
+        logging.info(f"VOI sum: {rand_voi_report['voi']}")
 
         return rand_voi_report
 
@@ -860,15 +869,23 @@ class EvaluateAnnotations():
 
         report = rand_voi_report.copy()
 
+        if self._best_erl_value is None or erl > self._best_erl_value:
+            self._best_erl_value = erl
+            self._best_erl_threshold = threshold
+        voi = report['voi']
+        if self._best_voi_value is None or voi < self._best_voi_value:
+            self._best_voi_value = voi
+            self._best_voi_threshold = threshold
+
         for k in {'voi_split_i', 'voi_merge_j'}:
             del report[k]
 
         if self.annotations_synapses_collection_name:
             report['synapse_voi_split'] = synapse_rand_voi_report['voi_split']
             report['synapse_voi_merge'] = synapse_rand_voi_report['voi_merge']
-            report['synapse_voi_sum'] = synapse_rand_voi_report['voi_split'] + synapse_rand_voi_report['voi_merge']
+            report['synapse_voi'] = synapse_rand_voi_report['voi']
 
-        report['expected_run_length'] = erl
+        report['erl'] = erl
         report['max_erl'] = max_erl
         report['total path length'] = self.total_length
         report['normalized_erl'] = normalized_erl
@@ -886,8 +903,9 @@ class EvaluateAnnotations():
             report['number_of_background_sites'] = self.num_bg_sites
             report['unsplittable_fragments'] = [int(f) for f in unsplittable_fragments]
 
-        report['merge_stats'] = merge_stats
-        report['split_stats'] = split_stats
+        if self.store_stats:
+            report['merge_stats'] = merge_stats
+            report['split_stats'] = split_stats
         report['threshold'] = threshold
         report['experiment'] = self.experiment
         report['setup'] = self.setup
@@ -997,6 +1015,9 @@ if __name__ == "__main__":
 
 
 """
+
+/cajal/scratch/projects/misc/mdraw/lsdex/data/funke/zebrafinch/testing/ground_truth/testing/consolidated/zebrafinch_gt_skeletons_new_gt_9_9_20_testing
+/cajal/scratch/projects/misc/mdraw/      data/funke/zebrafinch/testing/ground_truth/testing/consolidated/zebrafinch_gt_skeletons_new_gt_9_9_20_testing
 
 zf anno collection names:
 

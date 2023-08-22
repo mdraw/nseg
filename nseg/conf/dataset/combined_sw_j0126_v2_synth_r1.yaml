@@ -1,0 +1,13 @@
+tr_root: ${path_prefix}/data/combined_sw_j0126_v2_and_synth430mr_r1/
+val_root: null
+
+raw_name: volumes/raw
+gt_name: volumes/labels/neuron_ids
+mask_name: volumes/labels/labels_mask
+voxel_size: [20, 9, 9]
+in_memory: true
+enable_mask: true
+labels_padding: [840, 720, 720]
+
+sampling_weights:
+  'synth430mr.zarr': 29  # Sample 29 times more from synth430mr.zarr to keep 1:1 balance with the 29 other gt files

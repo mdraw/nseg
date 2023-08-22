@@ -420,6 +420,7 @@ class Train(GenericTrain):
             suffix: str = '',
             unwrap_parallel: bool = True,
             verbose: bool = True,
+            save_state_dict: bool = True,
     ) -> None:
         """Save/serialize trained model state to files.
 
@@ -501,17 +502,18 @@ class Train(GenericTrain):
         cfg_yaml = '' if self.cfg is None else OmegaConf.to_yaml(self.cfg, resolve=True)
         cfg_dict = {} if self.cfg is None else OmegaConf.to_container(self.cfg, resolve=True)
 
-        full_dict = {
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'lr_sched_state_dict': lr_sched_state,
-            'scaler_state_dict': self.scaler.state_dict(),
-            'info': info,
-        }
-        if self.cfg is not None:
-            full_dict['cfg'] = cfg_dict
-        torch.save(full_dict, state_dict_path)
-        log(f'Saved state_dict as {state_dict_path}')
+        if save_state_dict:
+            full_dict = {
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'lr_sched_state_dict': lr_sched_state,
+                'scaler_state_dict': self.scaler.state_dict(),
+                'info': info,
+            }
+            if self.cfg is not None:
+                full_dict['cfg'] = cfg_dict
+            torch.save(full_dict, state_dict_path)
+            log(f'Saved state_dict as {state_dict_path}')
         pts_model_path = f'{model_path}s'
         try:
             # Try saving directly as an uncompiled nn.Module

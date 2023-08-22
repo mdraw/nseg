@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import pymongo
+import psutil
 
 import torch
 
@@ -17,6 +18,10 @@ from nseg.gpx.gp_boundaries import SoftMax, Take
 
 setup_dir = os.path.dirname(os.path.realpath(__file__))
 
+
+# TODO: Use logging instead of print
+
+torch.backends.cudnn.benchmark = True
 
 DUMMY = False
 
@@ -99,7 +104,8 @@ def predict(
     pipeline += gp.Normalize(raw)
 
     # pipeline += gp.Stack(1)
-    # pipeline += gp.IntensityScaleShift(raw, 2, -1)
+
+    pipeline += gp.IntensityScaleShift(raw, 2, -1)
 
     if model_path.lower() == 'dummy':
         model = DummyModel().eval()
@@ -119,7 +125,6 @@ def predict(
             'input': raw
         },
         outputs=_predict_outputs,
-        enable_cudnn_benchmark=False,
     )
 
     if 'pred_boundaries' in output_names:
@@ -154,7 +159,7 @@ def predict(
         dataset_names=out_dataset_names,
         output_filename=out_file,
     )
-    pipeline += gp.PrintProfilingStats(every=10)
+    # pipeline += gp.PrintProfilingStats(every=10)
 
     roi_map = {output_arrkeys[k]: "write_roi" for k in output_names}
     roi_map[raw] = "read_roi"
@@ -172,7 +177,9 @@ def predict(
     with gp.build(pipeline):
         pipeline.request_batch(gp.BatchRequest())
     print("Prediction finished")
-
+    print(f'Prediction finished.')
+    print(f'Peak VRAM usage: {torch.cuda.max_memory_allocated() / 1024**3:.2f} GiB')
+    print(f'Peak RAM usage: {psutil.Process().memory_info().rss / 1024**3:.2f} GiB')
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
