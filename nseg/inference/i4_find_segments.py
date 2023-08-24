@@ -1,17 +1,13 @@
 import daisy
-import json
 import logging
-import multiprocessing as mp
 import numpy as np
 import os
-import sys
 import time
 import zarr
 from numcodecs import Zstd
 from funlib.segment.graphs.impl import connected_components
 
 from nseg.conf import NConf, DictConfig, hydra, unwind_dict
-from nseg.inference.iutils import np_savezstd
 
 
 def find_segments(

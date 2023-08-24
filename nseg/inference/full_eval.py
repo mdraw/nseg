@@ -1,15 +1,15 @@
 from pathlib import Path
-from typing import Any, Sequence
 from datetime import timedelta
 import json
 import gc
 import logging
-import os
 import sys
 import time
 import submitit
 
 from nseg.conf import NConf, DictConfig, hydra, unwind_dict
+from nseg import utils
+from nseg.evaluation.score_db_access import query_and_log_scores
 
 from nseg.inference import (
     i1_predict,
@@ -18,7 +18,6 @@ from nseg.inference import (
     i4_find_segments,
     i5_evaluate_annotations,
     i6_extract_segmentation,
-    iutils,
 )
 
 
@@ -38,7 +37,8 @@ def get_logging_kwargs(log_file_path: Path) -> dict:
 
 def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
     jobs_to_run = dict_cfg['meta']['jobs_to_run']
-    logging.info(f'\nRunning jobs {jobs_to_run}\n')
+    setup = dict_cfg['common']['setup']
+    logging.info(f'\nRunning jobs {jobs_to_run} for {setup}\n')
     assert jobs_to_run and set(jobs_to_run).issubset({'i1', 'i2', 'i3', 'i4', 'i5', 'i6'})
 
     if 'i4' in jobs_to_run:
@@ -51,9 +51,8 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
         logging.info(f'i4_find_segments took {timedelta(seconds=time.time() - t0)}')
 
     # Collect best thresholds w.r.t. voi and erl on val and test
-    best_thresh_results = {'voi': {}, 'erl': {}}
-    thresh_results = {'voi': {}, 'erl': {}}
-
+    best_thresh_results = {'setup': setup, 'voi': {}, 'erl': {}}
+    thresh_results = {'setup': setup, 'voi': {}, 'erl': {}}
 
     if 'i5' in jobs_to_run:
         anno_names = dict_cfg['meta']['evaluate_on']  # ['val', 'test']
@@ -64,9 +63,9 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
 
             # Set annotations_db and scores_db to val or test, depending on anno_name
             annotations_db_name = i5_dict_cfg['annotations_db_names'][anno_name]
-            scores_db_name = i5_dict_cfg['scores_db_names'][anno_name]
+            scores_collection_name = i5_dict_cfg['scores_collection_names'][anno_name]
             i5_dict_cfg['annotations_db_name'] = annotations_db_name
-            i5_dict_cfg['scores_db_name'] = scores_db_name
+            i5_dict_cfg['scores_collection_name'] = scores_collection_name
 
             logging.basicConfig(**get_logging_kwargs(hydra_run_dir / f'i5_evaluate_annotations_{anno_name}.log'))
             logging.info(f'Running i5_evaluate_annotations ({anno_name}')
@@ -96,21 +95,35 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
             logging.info(f'Test ERL on best val threshold: {test_erl_on_best_val_threshold}')
 
             logging.info(f'Storing best threshold results in db')
-            iutils.store_document(
+
+            scores_db_name = dict_cfg['i5_evaluate_annotations']['scores_db_name']
+            db_host = dict_cfg['common']['db_host']
+            best_thresh_results_collection_name = 'best_thresh_results'
+            thresh_results_collection_name = 'thresh_results'
+
+            utils.upsert_document(
                 doc=best_thresh_results,
-                collection_name=dict_cfg['common']['setup'],
-                db_name='best_thresh_results',
-                db_host=dict_cfg['common']['db_host'],
+                filt={'setup': setup},
+                collection_name=best_thresh_results_collection_name,
+                db_name=scores_db_name,
+                db_host=db_host,
             )
 
-            # Convert all keys of nested dict to strings for db compat
-            thresh_results_doc = json.loads(json.dumps(thresh_results))
+            utils.upsert_document(
+                doc=thresh_results,
+                filt={'setup': setup},
+                collection_name=thresh_results_collection_name,
+                db_name=scores_db_name,
+                db_host=db_host,
+            )
 
-            iutils.store_document(
-                doc=thresh_results_doc,
-                collection_name=dict_cfg['common']['setup'],
-                db_name='thresh_results',
-                db_host=dict_cfg['common']['db_host'],
+            logging.info('Querying scores from db and logging / visualizing on wandb and with matplotlib')
+            query_and_log_scores(
+                setup_name=setup,
+                db_name=scores_db_name,
+                db_host=db_host,
+                plot_dir=dict_cfg['i5_evaluate_annotations']['plot_dir'],
+                wandb_dir=dict_cfg['i5_evaluate_annotations']['wandb_dir'],
             )
 
     if 'i6' in jobs_to_run:
@@ -123,9 +136,9 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
         # TODO: Get best thresholds from database
         # TODO: Fail gracefully if best thresholds are not collected above
         if i6_dict_cfg['threshold'] == 'best_voi':
-            i6_dict_cfg['threshold'] = best_thresholds['voi']['val']
+            i6_dict_cfg['threshold'] = best_thresh_results['voi']['val']
         elif i6_dict_cfg['threshold'] == 'best_erl':
-            i6_dict_cfg['threshold'] = best_thresholds['erl']['val']
+            i6_dict_cfg['threshold'] = best_thresh_results['erl']['val']
 
         i6_extract_segmentation.extract_segmentation(**i6_dict_cfg)
 

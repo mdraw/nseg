@@ -24,6 +24,7 @@ tqdm>=4.65
 typing_extensions>=4.5
 submitit>=1.4.5
 zstandard >=0.19
+pymongo==3.13  # Strict pinning needed due to use of old removed API parts
 # napari # TODO: constrain
 
 randomname

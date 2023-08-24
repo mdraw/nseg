@@ -45,6 +45,7 @@ class EvaluateAnnotations():
             edges_db_name,
             edges_collection,
             scores_db_name,
+            scores_collection_name,
             annotations_db_name,
             annotations_skeletons_collection_name,
             thresholds_minmax,
@@ -179,6 +180,7 @@ class EvaluateAnnotations():
         self.edges_db_name = edges_db_name
         self.edges_collection = edges_collection
         self.scores_db_name = scores_db_name
+        self.scores_collection_name = scores_collection_name
         self.annotations_db_name = annotations_db_name
         self.annotations_skeletons_collection_name = \
             annotations_skeletons_collection_name
@@ -820,7 +822,7 @@ class EvaluateAnnotations():
 
         scores_client = MongoClient(self.scores_db_host)
         scores_db = scores_client[self.scores_db_name]
-        scores_collection = scores_db['scores']
+        scores_collection = scores_db[self.scores_collection_name]
 
         site_segment_ids, fragment_segment_lut = \
             self.get_site_segment_ids(threshold)

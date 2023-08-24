@@ -102,7 +102,7 @@ def get_heatmap_shader(channel, scale=1.0, shift=0.0, cmap='inferno'):
     }
 
     void main() {
-        float v = toNormalized({{ SCALE }} * getDataValue({{ CHANNEL }} + {{ SHIFT }}));
+        float v = toNormalized({{ SCALE }} * (getDataValue({{ CHANNEL }}) + {{ SHIFT }}));
         vec4 rgba = vec4(0,0,0,0);
         if (v != 0.0) {
             rgba = vec4({{ CMAP }}(v), 1.0);
@@ -219,10 +219,9 @@ def open_dataset(f, ds):
         return [([open_ds(f, f"{ds}/{key}") for key in zarr.open(f)[ds].keys()], ds)]
 
 
-
 def get_layer_opts(dataset: str) -> dict:
     if dataset.endswith('hardness'):
-        return {'shader': get_heatmap_shader(0, scale=1.)}
+        return {'shader': get_heatmap_shader(0, scale=1.0, shift=0.)}
     if dataset.endswith('lsds'):
         return {'c': [0, 1, 2]}
         # return {'c': [3, 4, 5]}
