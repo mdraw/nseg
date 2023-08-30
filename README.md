@@ -1,14 +1,19 @@
 # **nseg** - Improving Neuron Instance Segmentation
 
+
 ## Installation
 
-- From project root:
+Run from the repository clone directory:
 
     conda env create -f environment.yml
     conda activate nseg
     pip install .
 
-## Data preparation
+## Configuration
+
+All configuration files are in the `nseg/conf` directory. To make config changes you can either change the files themselves or pass config paths or option overrides through the [Hydra] (https://hydra.cc/docs/advanced/hydra-command-line-flags/) CLI of the entry point scripts.
+
+## Data preparation (j0126)
 
 Run in this order:
 
