@@ -2,8 +2,10 @@
 
 ## Installation
 
-From project root:
+- From project root:
 
+    conda env create -f environment.yml
+    conda activate nseg
     pip install .
 
 ## Data preparation
