@@ -50,7 +50,7 @@ wandb:
   ## These are directly passed to wandb.init() as **kwargs
   init_cfg:
     dir: ${path_prefix}/${v}/
-    entity: riegerfr #mdth
+    entity: franz-rieger #mdth
     project: nseg_hl6
     name: ${shortname}
     tags:
