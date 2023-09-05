@@ -117,6 +117,7 @@ def get_mpl_imshow_fig(img):
 def train(cfg: DictConfig) -> None:
     _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
+    print(f"Training root: {tr_root}")
     tr_files = sorted(list(tr_root.glob('*.zarr')))
 
     # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)

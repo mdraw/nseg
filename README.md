@@ -23,7 +23,7 @@ Run in this order:
 
 ## Training
 
-    nseg-train
+    python -m nseg.train_mtlsd
 
 ## Small-scale inference and evaluation (small cubes)
 
