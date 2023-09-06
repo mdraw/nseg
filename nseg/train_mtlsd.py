@@ -579,7 +579,7 @@ def train(cfg: DictConfig) -> None:
                 checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
                 if not checkpoint_path.exists():
                     # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
-                    trainer._save_model(save_state_dict=False)
+                    trainer._save_model(save_state_dict=True)
 
                 if len(val_files) > 0:
 
