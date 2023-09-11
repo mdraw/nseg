@@ -1,13 +1,13 @@
 _name: default
 
 source_h5_root: '/cajal/scratch/from_wholebrain/fromhd/jkor/from_lustre/new j0126 segmentation gt'
-dest_flat_h5_root: '/cajal/scratch/projects/misc/mdraw/data/j0126_h5_gt_flat_numbered'
-dest_zarr_flat_root: '/cajal/scratch/projects/misc/mdraw/data/j0126_gt_zarr_flat_v2_nocrop'
-dest_zarr_split_root: '/cajal/scratch/projects/misc/mdraw/data/j0126_gt_zarr_split_v2_nocrop'
+dest_flat_h5_root: ${path_prefix}/data/j0126_h5_gt_flat_numbered
+dest_zarr_flat_root: ${path_prefix}/data/j0126_gt_zarr_flat_v2_nocrop
+dest_zarr_split_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_nocrop
 
-#source_halfsynth_h5_origin_root: '/cajal/nvmescratch/users/riegerfr/miki_seg/'
-#dest_halfsynth_h5_flat_root: '/cajal/scratch/projects/misc/mdraw/data/halfsynth_h5_all_training/'
-## dest_halfsynth_zarr_flat_root: '/cajal/scratch/projects/misc/mdraw/data/halfsynth_zarr_all/'
+#source_halfsynth_h5_origin_root: /cajal/nvmescratch/users/riegerfr/miki_seg/
+#dest_halfsynth_h5_flat_root: ${path_prefix}/data/halfsynth_h5_all_training/
+## dest_halfsynth_zarr_flat_root: ${path_prefix}/data/halfsynth_zarr_all/
 #halfsynth_versions: [0, 1, 2, 3]
 #halfsynth_name_prefix: halfsynth_
 #halfsynth_use_only_training_cubes: true
