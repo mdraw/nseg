@@ -3,6 +3,10 @@
 # - Remove 4D convolution support
 # - (WIP) Add types for torchscript compiler
 
+# Experimental flags
+USE_E3_CROPPING = False
+USE_EXTRACTOR = False
+
 import math
 from typing import Optional, Sequence
 import torch
@@ -73,7 +77,9 @@ class Downsample(torch.nn.Module):
 
     def __init__(
             self,
-            downsample_factor):
+            downsample_factor,
+            ceil_mode=True
+    ):
 
         super(Downsample, self).__init__()
 
@@ -88,7 +94,9 @@ class Downsample(torch.nn.Module):
 
         self.down = pool(
             downsample_factor,
-            stride=downsample_factor)
+            stride=downsample_factor,
+            ceil_mode=ceil_mode,
+        )
 
     def forward(self, x):
 
@@ -117,6 +125,11 @@ class Upsample(torch.nn.Module):
             enable_pre_cropping=False):
 
         super(Upsample, self).__init__()
+
+        if USE_E3_CROPPING:
+            print('Warning, experimental changes in cropping active!')
+        if USE_EXTRACTOR:
+            print('Warning, experimental MedNext feature extractor active!')
 
         assert (crop_factor is None) == (next_conv_kernel_sizes is None), \
             "crop_factor and next_conv_kernel_sizes have to be given together"
@@ -223,17 +236,24 @@ class Upsample(torch.nn.Module):
 
         g_up = self.up(g_out)
 
-        if self.enable_pre_cropping and self.next_conv_kernel_sizes is not None:
-            g_cropped = self.crop_to_factor(
-                g_up,
-                self.crop_factor,
-                self.next_conv_kernel_sizes)
+        if USE_E3_CROPPING:
+            from elektronn3.models.resunet import autocrop
+
+            f_cropped, g_cropped = autocrop(f_left, g_up)
+            return torch.cat([f_cropped, g_up], dim=1)
         else:
-            g_cropped = g_up
+            if self.enable_pre_cropping and self.next_conv_kernel_sizes is not None:
+                g_cropped = self.crop_to_factor(
+                    g_up,
+                    self.crop_factor,
+                    self.next_conv_kernel_sizes)
+            else:
+                g_cropped = g_up
 
-        f_cropped = self.crop(f_left, g_cropped.size()[-self.dims:])
+            f_cropped = self.crop(f_left, g_cropped.size()[-self.dims:])
+            return torch.cat([f_cropped, g_cropped], dim=1)
 
-        return torch.cat([f_cropped, g_cropped], dim=1)
+
 
 
 class UNet(torch.nn.Module):
@@ -253,6 +273,7 @@ class UNet(torch.nn.Module):
             num_heads=1,
             constant_upsample=False,
             padding='valid',
+            ceil_mode=False,
             enable_batch_norm=False,
             enable_pre_cropping=False,
             active_head_ids: Optional[Sequence[int]] = None,
@@ -402,6 +423,28 @@ class UNet(torch.nn.Module):
 
         # modules
 
+        if USE_EXTRACTOR:
+            # MedNext-based feature extractor that outputs features of the original spatial shape,
+            #  which the UNet is trained on instead of directly ingesting raw data.
+            #  The in_channels parameter of the UNet should then be set to the feature dimensionality
+            #  of the extractor instead of 1.
+            from nseg.mednext import MedNeXt
+            self.mednext = MedNeXt(
+                in_channels=1,
+                n_channels=in_channels,
+                n_classes=in_channels,
+                exp_r=[2, 3, 4, 4, 4, 4, 4, 3, 2],  # Expansion ratio as in Swin Transformers
+                # exp_r = 2,
+                kernel_size=3,  # Can test kernel_size
+                deep_supervision=False,  # Can be used to test deep supervision
+                do_res=False,  # Can be used to individually test residual connection
+                do_res_up_down=False,
+                # block_counts = [2,2,2,2,2,2,2,2,2],
+                block_counts=[3, 4, 8, 8, 8, 8, 8, 4, 3],
+                checkpoint_style=None,
+            )
+
+
         # left convolutional passes
         self.l_conv = nn.ModuleList([
             ConvPass(
@@ -419,7 +462,7 @@ class UNet(torch.nn.Module):
 
         # left downsample layers
         self.l_down = nn.ModuleList([
-            Downsample(downsample_factors[level])
+            Downsample(downsample_factors[level], ceil_mode=ceil_mode)
             for level in range(self.num_levels - 1)
         ])
 
@@ -491,6 +534,9 @@ class UNet(torch.nn.Module):
         return fs_out
 
     def forward(self, x):
+
+        if USE_EXTRACTOR:
+            x = self.mednext(x)
 
         y = self.rec_forward(self.num_levels - 1, x)
 
