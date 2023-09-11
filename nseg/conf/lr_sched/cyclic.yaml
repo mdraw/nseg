@@ -1,0 +1,9 @@
+_name: cyclic
+
+sched_class: torch.optim.lr_scheduler.CyclicLR
+init_kwargs:
+  base_lr: 1.0e-5
+  max_lr: 1.0e-3
+  step_size_up: 20000
+  step_size_down: 80000
+  cycle_momentum: false

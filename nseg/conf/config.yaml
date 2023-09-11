@@ -2,6 +2,7 @@
 defaults:
   - model: hl_unet
   - loss: hl
+  - lr_sched: none
   - dataset: j0126_v2_2val
   - data_prep: v2
   - knossos_raw_to_zarr: default
@@ -63,19 +64,6 @@ wandb:
   # Include only files with these extensions
   code_include_fn_exts: ['.py', '.json', '.yaml', '.yml', '.sh', '.txt']
 
-#loss:
-#  loss_class: nseg.shared.WeightedMSELoss
-
-#loss:
-#  loss_class: nseg.shared.HardnessEnhancedLoss
-#  init_kwargs:
-#    enable_hardness_weighting: true
-#    hardness_loss_formula: mse
-#    loss_term_weights:
-#      aff: 1.0
-#      lsd: 1.0
-#      bce: 0.5
-#      hardness: 0.01
 
 augmentations:
   enable_elastic: true

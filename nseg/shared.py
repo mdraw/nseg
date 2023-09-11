@@ -275,7 +275,7 @@ class HardnessEnhancedLoss(torch.nn.Module):
 
         # Disregard LSD because of masking issues
         # Also experimentally disregard affs # TODO
-        total_hardness_relevant_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps, exclude=['lsd'])
+        total_hardness_relevant_seg_loss_map = self._combine_seg_loss_maps(seg_loss_maps, exclude=['lsd', 'aff'])
 
         # hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_seg_loss_map)
         hardness_loss_map = self._compute_hardness_loss_map(pred_hardness, total_hardness_relevant_seg_loss_map)
@@ -288,8 +288,9 @@ class HardnessEnhancedLoss(torch.nn.Module):
             masked_total_loss = self._apply_mask(total_loss_map, mask)
             total_loss_scalar = torch.mean(masked_total_loss)
         else:
-            total_loss_map = total_seg_loss_map + hardness_loss_map
-            total_loss_scalar = torch.mean(total_loss_map)
+            # total_loss_map = total_seg_loss_map + hardness_loss_map
+            # total_loss_scalar = torch.mean(total_loss_map)
+            total_loss_scalar = total_seg_loss_map.mean() + hardness_loss_map.mean()
         return total_loss_scalar
 
 

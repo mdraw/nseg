@@ -125,6 +125,7 @@ class Train(GenericTrain):
         inputs: Dict[str, ArrayKey],
         outputs: Dict[Union[int, str], ArrayKey],
         loss_inputs: Dict[Union[int, str], ArrayKey],
+        lr_sched: Optional[torch.optim.lr_scheduler.LRScheduler] = None,
         gradients: Dict[Union[int, str], ArrayKey] = {},
         array_specs: Optional[Dict[ArrayKey, ArraySpec]] = None,
         checkpoint_basename: str = "model",
@@ -160,6 +161,7 @@ class Train(GenericTrain):
         self.model = model
         self.loss = loss
         self.optimizer = optimizer
+        self.lr_sched = lr_sched
         self.loss_inputs = loss_inputs
         self.checkpoint_basename = checkpoint_basename
         self.save_every = save_every
@@ -369,6 +371,9 @@ class Train(GenericTrain):
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
+
+        if self.lr_sched is not None:
+            self.lr_sched.step()
 
         # add requested model outputs to batch
         for array_key, array_name in requested_outputs.items():

@@ -201,8 +201,6 @@ def train(cfg: DictConfig) -> None:
         *cfg.model.backbone.inp_shape,
     )
 
-    # loss = HardnessEnhancedLoss(cfg.loss.init_kwargs)
-
     loss_class = import_symbol(cfg.loss.loss_class)
     loss_init_kwargs = cfg.loss.get('init_kwargs', {})
     loss = loss_class(**loss_init_kwargs)
@@ -212,6 +210,13 @@ def train(cfg: DictConfig) -> None:
         betas=tuple(cfg.training.adam_betas),
         params=model.parameters()
     )
+
+    if cfg.get('lr_sched') is None or cfg.lr_sched.get('_name') == 'none':
+        lr_sched = None
+    else:
+        lr_sched_class = import_symbol(cfg.lr_sched.sched_class)
+        lr_sched_init_kwargs = cfg.lr_sched.get('init_kwargs', {})
+        lr_sched = lr_sched_class(optimizer, **lr_sched_init_kwargs)
 
     trainer_inputs = {'input': raw}
     trainer_outputs = {
@@ -414,10 +419,10 @@ def train(cfg: DictConfig) -> None:
         model,
         loss,
         optimizer,
+        lr_sched=lr_sched,
         inputs=trainer_inputs,
         outputs=trainer_outputs,
         loss_inputs=trainer_loss_inputs,
-        # log_dir = "./logs/"
         save_every=save_every,
         checkpoint_basename=str(save_path / 'model'),
         resume=False,
@@ -463,7 +468,10 @@ def train(cfg: DictConfig) -> None:
             _loss_log_now = _full_eval_now or (i + 1) % 100 == 0
             if _loss_log_now:
                 # tb.add_scalar("loss", batch.loss, batch.iteration)
-                wandb.log({'training/scalars/loss': batch.loss}, step=batch.iteration)
+                wandb.log({
+                    'training/scalars/loss': batch.loss,
+                    'training/scalars/lr': lr_sched.get_last_lr()[0],
+                }, step=batch.iteration)
             if _full_eval_now:
                 logging.info(
                     f'Evaluating at step {batch.iteration}, '
