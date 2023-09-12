@@ -2,8 +2,8 @@ _name: default
 
 source_h5_root: '/cajal/scratch/from_wholebrain/fromhd/jkor/from_lustre/new j0126 segmentation gt'
 dest_flat_h5_root: ${path_prefix}/data/j0126_h5_gt_flat_numbered
-dest_zarr_flat_root: ${path_prefix}/data/j0126_gt_zarr_flat_v2_nocrop
-dest_zarr_split_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_nocrop
+dest_zarr_flat_root: ${path_prefix}/data/j0126_gt_zarr_flat_v2_c350
+dest_zarr_split_root: ${path_prefix}/data/j0126_gt_zarr_split_v2_c350
 
 #source_halfsynth_h5_origin_root: /cajal/nvmescratch/users/riegerfr/miki_seg/
 #dest_halfsynth_h5_flat_root: ${path_prefix}/data/halfsynth_h5_all_training/
@@ -21,8 +21,8 @@ include_info: true
 name_prefix: j0126_gt_
 zarr_zip: false
 mask_shape_like_raw_shape: false
-crop_raw_shape: null  # Don't crop
-#crop_raw_shape: [350, 350, 350]
+#crop_raw_shape: null  # Don't crop
+crop_raw_shape: [350, 350, 350]  # Crop to this shape
 
 dry_run: false
 
