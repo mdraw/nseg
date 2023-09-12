@@ -56,7 +56,8 @@ def mpl_plot(df, collection_name, markers, plot_dir):
         ylim=[0, 10],
         yticks=range(11),
         title=f'{collection_name}: VOI',
-        ax=ax
+        ax=ax,
+        legend=False,
     )
     ax.scatter(**markers['voi'], marker='v', s=marker_size, c=marker_color)
 
@@ -72,7 +73,8 @@ def mpl_plot(df, collection_name, markers, plot_dir):
         ylim=[0, 40_000],
         yticks=[0, 5000, 10_000, 15_000, 20_000, 25_000, 30_000, 35_000, 40_000],
         title=f'{collection_name}: ERL',
-        ax=ax
+        ax=ax,
+        legend=False,
     )
     ax.scatter(**markers['erl'], marker='v', s=marker_size, c=marker_color)
     if collection_name.endswith('test'):
@@ -110,10 +112,10 @@ def query_scores(
         }
     else:
         # Keep thresholds (x) but update score values (y) with current eval values
-        # markers['voi']['y'] = best_voi_row.voi
-        markers['voi']['y'] = 3.081
-        # markers['erl']['y'] = best_erl_row.erl
-        markers['erl']['y'] = 10349
+        markers['voi']['y'] = best_voi_row.voi
+        # markers['voi']['y'] = 3.081
+        markers['erl']['y'] = best_erl_row.erl
+        # markers['erl']['y'] = 10349
 
     if enable_mpl:
         mpl_plot(df, collection_name, markers, plot_dir)

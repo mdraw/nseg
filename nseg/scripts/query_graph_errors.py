@@ -1,3 +1,9 @@
+"""
+Experimental code for querying graph errors and fetching hardness data at the location of the error,
+so that we can check if learned hardness is a good predictor of error locations.
+"""
+
+
 import pymongo
 import numpy as np
 import daisy
@@ -83,6 +89,17 @@ print(h_arr)
 # TODO: Find a good approximation of actual error locations (not just component centroids / point annotations).
 # TODO: Get hardness data at error locations.
 
+# Idea: Collect hardness data along the connecting line between two falsely merged nodes.
+#  This could be done by sampling points along the line, or by using a line integral.
+
+# Example:
+
+false_merge_nodes = np.array([3000, 3000, 3000]),  np.array([3200, 3200, 3200]) # TODO: Get from merge error data
+a, b = false_merge_nodes
+
+length = int(np.hypot(b - a))
+zz, yy, xx = np.linspace(a[0], b[0], length), np.linspace(a[1], b[1], length), np.linspace(a[2], b[2], length)
+connecting_line = h_arr[zz.astype(int), yy.astype(int), xx.astype(int)]
 
 import IPython; IPython.embed(); raise SystemExit
 
