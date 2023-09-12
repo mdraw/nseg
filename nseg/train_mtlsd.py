@@ -468,10 +468,10 @@ def train(cfg: DictConfig) -> None:
             _loss_log_now = _full_eval_now or (i + 1) % 100 == 0
             if _loss_log_now:
                 # tb.add_scalar("loss", batch.loss, batch.iteration)
-                wandb.log({
-                    'training/scalars/loss': batch.loss,
-                    'training/scalars/lr': lr_sched.get_last_lr()[0],
-                }, step=batch.iteration)
+                _scalars_to_log = {'training/scalars/loss': batch.loss}
+                if lr_sched is not None:
+                    _scalars_to_log['training/scalars/lr'] = lr_sched.get_last_lr()[0]
+                wandb.log(_scalars_to_log, step=batch.iteration)
             if _full_eval_now:
                 logging.info(
                     f'Evaluating at step {batch.iteration}, '
@@ -584,10 +584,10 @@ def train(cfg: DictConfig) -> None:
                     commit=False
                 )
 
-                checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pth'
+                checkpoint_path = save_path / f'model_checkpoint_{batch.iteration}.pt'
                 if not checkpoint_path.exists():
                     # Manually create checkpoint if it doesn't exist (can happen on `first_eval_at_step` trigger)
-                    trainer._save_model(save_state_dict=True)
+                    trainer._save_model(save_state_dict=cfg.training.save_full_state_dicts)
 
                 if len(val_files) > 0:
 

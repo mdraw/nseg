@@ -100,6 +100,7 @@ training:
 #  lr: 1.0e-3
 
   save_jit: null
+  save_full_state_dicts: false  # Full state dicts can be huge, so only save if needed
 
 
 # TODO: eval subconfigs (default - testing; default - validation; agglo thresh sweep - validation)

@@ -240,6 +240,9 @@ class HardnessEnhancedLoss(torch.nn.Module):
             if exclude is None or loss_name not in exclude:
                 weight = self.loss_term_weights[loss_name]
                 combined_seg_loss_map += weight * loss_map
+        if isinstance(combined_seg_loss_map, float):
+            # No loss maps were combined, still scalar 0. -> Return None
+            return None
         return combined_seg_loss_map
 
     def forward(
@@ -288,9 +291,9 @@ class HardnessEnhancedLoss(torch.nn.Module):
             masked_total_loss = self._apply_mask(total_loss_map, mask)
             total_loss_scalar = torch.mean(masked_total_loss)
         else:
-            # total_loss_map = total_seg_loss_map + hardness_loss_map
-            # total_loss_scalar = torch.mean(total_loss_map)
-            total_loss_scalar = total_seg_loss_map.mean() + hardness_loss_map.mean()
+            total_loss_map = total_seg_loss_map + hardness_loss_map
+            total_loss_scalar = torch.mean(total_loss_map)
+            # total_loss_scalar = total_seg_loss_map.mean() + hardness_loss_map.mean()
         return total_loss_scalar
 
 
