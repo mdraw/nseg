@@ -51,8 +51,12 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
         logging.info(f'i4_find_segments took {timedelta(seconds=time.time() - t0)}')
 
     # Collect best thresholds w.r.t. voi and erl on val and test
-    best_thresh_results = {'setup': setup, 'voi': {}, 'erl': {}}
-    thresh_results = {'setup': setup, 'voi': {}, 'erl': {}}
+    best_thresh_results = {'setup': setup, 'voi': {}, 'voi_merge': {}, 'voi_split': {}, 'erl': {}}
+    thresh_results = {'setup': setup, 'voi': {}, 'voi_merge': {}, 'voi_split': {}, 'erl': {}}
+
+    # Report optimal threshold for either voi or erl on val and test
+    tuning_metric = dict_cfg['i5_evaluate_annotations']['tuning_metric']
+    assert tuning_metric in {'voi', 'erl'}
 
     if 'i5' in jobs_to_run:
         anno_names = dict_cfg['meta']['evaluate_on']  # ['val', 'test']
@@ -75,24 +79,35 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
             best_thresh_results['voi'][anno_name] = evaluate._best_voi_threshold
             best_thresh_results['erl'][anno_name] = evaluate._best_erl_threshold
             thresh_results['voi'][anno_name] = evaluate._thresh_vois
+            thresh_results['voi_merge'][anno_name] = evaluate._thresh_vois_merge
+            thresh_results['voi_split'][anno_name] = evaluate._thresh_vois_split
             thresh_results['erl'][anno_name] = evaluate._thresh_erls
 
             logging.info(f'i5_evaluate_annotations ({anno_name}) took {timedelta(seconds=time.time() - t0)}')
 
         logging.info(f'Best threshold configurations:\n{json.dumps(best_thresh_results, indent=4)}\n')
         if 'val' in anno_names and 'test' in anno_names:
+
             test_voi_on_best_val_threshold = thresh_results['voi']['test'][
-                best_thresh_results['voi']['val']
+                best_thresh_results[tuning_metric]['val']
+            ]
+            test_voi_merge_on_best_val_threshold = thresh_results['voi_merge']['test'][
+                best_thresh_results[tuning_metric]['val']
+            ]
+            test_voi_split_on_best_val_threshold = thresh_results['voi_split']['test'][
+                best_thresh_results[tuning_metric]['val']
             ]
             test_erl_on_best_val_threshold = thresh_results['erl']['test'][
-                best_thresh_results['erl']['val']
+                best_thresh_results[tuning_metric]['val']
             ]
 
             best_thresh_results['voi']['test_best_val_threshold'] = test_voi_on_best_val_threshold
+            best_thresh_results['voi_merge']['test_best_val_threshold'] = test_voi_merge_on_best_val_threshold
+            best_thresh_results['voi_split']['test_best_val_threshold'] = test_voi_split_on_best_val_threshold
             best_thresh_results['erl']['test_best_val_threshold'] = test_erl_on_best_val_threshold
 
-            logging.info(f'Test VOI on best val threshold: {test_voi_on_best_val_threshold}')
-            logging.info(f'Test ERL on best val threshold: {test_erl_on_best_val_threshold}')
+            logging.info(f'Test VOI on best val threshold: {test_voi_on_best_val_threshold:.3f}')
+            logging.info(f'Test ERL on best val threshold: {test_erl_on_best_val_threshold:.0f}')
 
             logging.info(f'Storing best threshold results in db')
 

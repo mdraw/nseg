@@ -162,6 +162,7 @@ i5_evaluate_annotations:
   annotations_skeletons_collection_name: zebrafinch
   node_components: zebrafinch_components
   node_mask: zebrafinch_mask
+  tuning_metric: erl  # select either erl or voi for selection of best validation threshold that is then applied to the test run
   # roi_offset: [4000, 7200, 4500]  # benchmark_roi
   # roi_shape: [106000, 83700, 87300]  # benchmark_roi
 #  thresholds_minmax: [0.4, 1]

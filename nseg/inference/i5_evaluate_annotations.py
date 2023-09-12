@@ -234,6 +234,8 @@ class EvaluateAnnotations():
 
         self._thresh_erls: dict[float, float] = {}
         self._thresh_vois: dict[float, float] = {}
+        self._thresh_vois_merge: dict[float, float] = {}
+        self._thresh_vois_split: dict[float, float] = {}
 
 
     def store_lut_in_block(self, block):
@@ -875,6 +877,8 @@ class EvaluateAnnotations():
         report = rand_voi_report.copy()
         voi = report['voi']
         self._thresh_vois[threshold] = voi
+        self._thresh_vois_merge[threshold] = report['voi_merge']
+        self._thresh_vois_split[threshold] = report['voi_split']
         self._thresh_erls[threshold] = erl
 
         if self._best_erl_value is None or erl > self._best_erl_value:
