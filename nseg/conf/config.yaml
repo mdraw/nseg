@@ -126,11 +126,13 @@ eval:
   # threshold: 0.043
 
   output_cfg:
-    pred_affs: { idx: 1, out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
-    pred_lsds: { idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_affs: {out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_lsds: {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
     # TODO: More concise output cfg
-#    pred_boundaries: { idx: 2, out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
-#    pred_hardness: { idx: 3, out_dims: 1, out_dtype: float32, squeeze: true, scale: 0.5 }
+    pred_boundaries: {out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
+    pred_hardness: {out_dims: 1, out_dtype: float32, squeeze: true, scale: 1.0 }
+    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale: 1.0}
+
 
   # roi_shape: [250, 250, 250]
   roi_shape: null

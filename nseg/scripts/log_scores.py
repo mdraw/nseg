@@ -1,11 +1,18 @@
-
-import sys
+import argparse
 from pathlib import Path
 
 from nseg.evaluation.score_db_access import query_and_log_scores
 
+
 if __name__ == '__main__':
-    assert len(sys.argv) == 2, f'Usage: {Path(__file__).name} <setup_name>'
-    # e.g. setup_name = '08-18_17-42_glum-cof__400k_11_micron'
-    setup_name = sys.argv[1]
-    query_and_log_scores(setup_name=setup_name)
+    parser = argparse.ArgumentParser(description='Display and optionally log and plot scores from a given setup name')
+    parser.add_argument('setup_name', type=str, help='Name of the experiment setup')
+    parser.add_argument('--enable-mpl', action='store_true', help='Enable plot')
+    parser.add_argument('--enable-wandb', action='store_true', help='Enable wandb upload')
+    args = parser.parse_args()
+
+    query_and_log_scores(
+        setup_name=args.setup_name,
+        enable_mpl=args.enable_mpl,
+        enable_wandb=args.enable_wandb
+    )

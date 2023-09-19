@@ -4,13 +4,22 @@ import numpy as np
 import pandas as pd
 import pymongo
 import matplotlib.pyplot as plt
+import seaborn as sns
 import wandb
 import sys
 import logging
 from pathlib import Path
+import yaml
 
+from nseg.conf import NConf, DictConfig
+
+sns.set_theme()
+sns.set_style('whitegrid')
 
 # TODO: Use new score summaries (thresh_results, best_thresh_results) instead of raw score collections?
+
+# TODO: Markers are wrongly y-valued for test set
+
 
 _default_proj_keys = [
     'threshold',
@@ -44,44 +53,65 @@ def mpl_plot(df, collection_name, markers, plot_dir):
     plot_dir = Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    erl_ref = 12_000
-    voi_ref = 3.3
+    # erl_ref = 12_000
+    # voi_ref = 3.3
 
     fig, ax = plt.subplots(figsize=(10, 10))
 
-    df.plot(
+    # df.plot(
+    #     x='threshold',
+    #     y='voi',
+    #     # y=['voi_split', 'voi_merge', 'voi'],
+    #     ylim=[0, 10],
+    #     yticks=range(11),
+    #     title=f'{collection_name}: VOI',
+    #     ax=ax,
+    #     legend=False,
+    # )
+    sns.lineplot(
+        data=df,
         x='threshold',
         y='voi',
-        # y=['voi_split', 'voi_merge', 'voi'],
-        ylim=[0, 10],
-        yticks=range(11),
-        title=f'{collection_name}: VOI',
         ax=ax,
-        legend=False,
+        # title=f'{collection_name}: VOI',
     )
-    ax.scatter(**markers['voi'], marker='v', s=marker_size, c=marker_color)
+    ax.set_xticks(np.arange(0, 0.52, 0.04))
+    ax.set_ylim(0, 10)
+    ax.set_yticks(range(11))
+    ax.scatter(**markers['voi'], marker='x', s=marker_size, c=marker_color)
 
-    if collection_name.endswith('test'):
-        ax.scatter(markers['voi']['x'], voi_ref, marker='x', s=marker_size, c='red')
+    # if collection_name.endswith('test'):
+    #     ax.scatter(markers['voi']['x'], voi_ref, marker='x', s=marker_size, c='red')
 
     fig.savefig(f'{plot_dir}/{collection_name}_voi.png')
+    plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(10, 10))
-    df.plot(
+    # df.plot(
+    #     x='threshold',
+    #     y=['erl'],
+    #     ylim=[0, 40_000],
+    #     yticks=[0, 5000, 10_000, 15_000, 20_000, 25_000, 30_000, 35_000, 40_000],
+    #     title=f'{collection_name}: ERL',
+    #     ax=ax,
+    # )
+    sns.lineplot(
+        data=df,
         x='threshold',
-        y=['erl'],
-        ylim=[0, 40_000],
-        yticks=[0, 5000, 10_000, 15_000, 20_000, 25_000, 30_000, 35_000, 40_000],
-        title=f'{collection_name}: ERL',
+        y='erl',
+        # title=f'{collection_name}: ERL',
         ax=ax,
-        legend=False,
+        # legend=False,
     )
-    ax.scatter(**markers['erl'], marker='v', s=marker_size, c=marker_color)
-    if collection_name.endswith('test'):
-        ax.scatter(markers['erl']['x'], erl_ref, marker='x', s=marker_size, c='red')
-
+    ax.set_xticks(np.arange(0, 0.52, 0.04))
+    ax.set_ylim(0, 40_000)
+    ax.set_yticks([0, 5000, 10_000, 15_000, 20_000, 25_000, 30_000, 35_000, 40_000])
+    ax.scatter(**markers['erl'], marker='x', s=marker_size, c=marker_color)
+    # if collection_name.endswith('test'):
+    #     ax.scatter(markers['erl']['x'], erl_ref, marker='x', s=marker_size, c='red')
 
     fig.savefig(f'{plot_dir}/{collection_name}_erl.png')
+    plt.close(fig)
 
 
 # def query_scores(setup_name: str, annos: Literal['val', 'test'] = 'val'):
@@ -94,16 +124,20 @@ def query_scores(
         markers=None,
         enable_mpl=True,
         enable_wandb=True,
+        verbose=True,
 ):
-    logging.info(f'Querying scores from {db_name}{collection_name}')
+    print_ = print if verbose else lambda *args, **kwargs: None
+    # logging.info(f'Querying scores from {db_name}{collection_name}')
+    print_(f'Querying scores from {db_name}{collection_name}')
     df = get_scores_df(collection_name=collection_name, db_name=db_name, db_host=db_host, proj_keys=proj_keys)
     best_voi_row = df.loc[df['voi'].idxmin()]
     best_erl_row = df.loc[df['erl'].idxmax()]
 
-    print(df)
-    print()
-    print(f'Best VOI: {best_voi_row.voi:.4f} with threshold {best_voi_row.threshold}')
-    print(f'Best ERL: {best_erl_row.erl:.0f} with threshold {best_erl_row.threshold}')
+    print_(df)
+    print_()
+    print_(f'Best VOI: {best_voi_row.voi:.4f} with threshold {best_voi_row.threshold}')
+    print_(f'Best ERL: {best_erl_row.erl:.0f} with threshold {best_erl_row.threshold}')
+    print_()
 
     if markers is None:
         markers = {
@@ -118,7 +152,7 @@ def query_scores(
         # markers['erl']['y'] = 10349
 
     if enable_mpl:
-        mpl_plot(df, collection_name, markers, plot_dir)
+        mpl_plot(df=df, collection_name=collection_name, markers=markers, plot_dir=plot_dir)
 
     if enable_wandb:
         wdf = wandb.Table(dataframe=df)
@@ -136,13 +170,14 @@ def query_scores(
 
 
 def query_and_log_scores(
-    setup_name: str,
-    plot_dir: str = '/cajal/scratch/projects/misc/mdraw/lsdex/tmp/scores_plots',
-    wandb_dir: str = '/cajal/scratch/projects/misc/mdraw/lsdex/tmp/scores_wandb',
-    db_name: str = 'scores',
-    db_host: str = 'cajalg001',
-    enable_mpl: bool = True,
-    enable_wandb: bool = True,
+        setup_name: str,
+        plot_dir: str = '/cajal/scratch/projects/misc/mdraw/lsdex/tmp/scores_plots',
+        wandb_dir: str = '/cajal/scratch/projects/misc/mdraw/lsdex/tmp/scores_wandb',
+        db_name: str = 'scores',
+        db_host: str = 'cajalg001',
+        enable_mpl: bool = True,
+        enable_wandb: bool = True,
+        verbose: bool = True,
 ):
     # A totally safe way to get model_name and roi_name, no way this could go wrong
     model_name = setup_name[:-10]
@@ -170,6 +205,7 @@ def query_and_log_scores(
         plot_dir=plot_dir,
         enable_mpl=enable_mpl,
         enable_wandb=enable_wandb,
+        verbose=verbose,
     )
     query_scores(
         collection_name=test_collection_name,
@@ -180,4 +216,48 @@ def query_and_log_scores(
         enable_mpl=enable_mpl,
         enable_wandb=enable_wandb,
         markers=val_markers,
+        verbose=verbose,
     )
+
+
+def get_test_df_and_best_threshold(
+        setup_name: str,
+        # plot_dir: str = '/cajal/scratch/projects/misc/mdraw/lsdex/tmp/multi_plots',
+        db_name: str = 'scores',
+        db_host: str = 'cajalg001',
+        proj_keys=None,
+        tuning_metric='erl',
+) -> tuple[pd.DataFrame, float]:
+    # A totally safe way to get model_name and roi_name, no way this could go wrong
+    model_name = setup_name[:-10]
+    roi_name = setup_name[-9:]
+
+    proj_keys = proj_keys or _default_proj_keys
+
+    val_collection_name = f'{setup_name}_val'
+    test_collection_name = f'{setup_name}_test'
+
+    val_df = get_scores_df(collection_name=val_collection_name, db_name=db_name, db_host=db_host, proj_keys=proj_keys)
+    best_val_threshold = val_df.loc[val_df[tuning_metric].idxmin()].threshold
+    test_df = get_scores_df(collection_name=test_collection_name, db_name=db_name, db_host=db_host, proj_keys=proj_keys)
+
+    return test_df, best_val_threshold
+
+
+def load_yaml(path) -> DictConfig:
+    content = NConf.load(path)
+    # with open(path, 'r') as f:
+    #     content = yaml.safe_load(f)
+    return content
+
+
+def get_groups(info_path='/u/mdraw/nseg/evaluation/eval_run_groups.yaml'):
+    all_info = load_yaml(info_path)
+    _group = 'MTLSD + BN + HL + HW + DT + CE'
+    _runs = all_info.groups[_group].runs
+    for run, run_info in _runs.items():
+        if run_info.scores_db_name is None:
+            continue
+        test_df, best_val_threshold = get_test_df_and_best_threshold(run_info.scores_db_name)
+
+    ## TODO (?): Combine the test_dfs of each group so we have multiple measurements for the same threshold

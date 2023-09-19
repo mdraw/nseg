@@ -106,7 +106,11 @@ def run_i456(dict_cfg: dict, hydra_run_dir) -> None:
             best_thresh_results['voi_split']['test_best_val_threshold'] = test_voi_split_on_best_val_threshold
             best_thresh_results['erl']['test_best_val_threshold'] = test_erl_on_best_val_threshold
 
+            logging.info(f'Best threshold configurations (updated with scores):\n{json.dumps(best_thresh_results, indent=4)}\n')
+
             logging.info(f'Test VOI on best val threshold: {test_voi_on_best_val_threshold:.3f}')
+            logging.info(f'Test VOI (merge) on best val threshold: {test_voi_merge_on_best_val_threshold:.3f}')
+            logging.info(f'Test VOI (split) on best val threshold: {test_voi_split_on_best_val_threshold:.3f}')
             logging.info(f'Test ERL on best val threshold: {test_erl_on_best_val_threshold:.0f}')
 
             logging.info(f'Storing best threshold results in db')

@@ -133,6 +133,10 @@ def predict(
         pipeline += SoftMax(boundary_arrkey)
         pipeline += Take(boundary_arrkey, 1, 1)  # Take channel 1
 
+    if 'pred_boundary_distmap' in output_names:
+        # Do an extra squeeze because distmap has two singleton channels
+        pipeline += gp.Squeeze([output_arrkeys['pred_boundary_distmap']])
+
     outputs_to_squeeze = [
         output_arrkeys[k]
         for k, v in output_cfg.items()

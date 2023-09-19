@@ -1,0 +1,81 @@
+groups:
+  'AFF':
+    runs:
+      radial-array_aff_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/fwx7kdll
+        scores_db_name:
+      largo-tungsten_aff_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/lnx6nhni
+        scores_db_name: 09-11_21-54_largo-tu__400k_benchmark
+      plain-image_aff_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/dpc51suy
+        scores_db_name:
+        comment: 'bad training loss'
+    comment:
+
+  'AFF + BN':
+    runs:
+      flat-donut_aff_bn_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/z8ddnhk0
+        scores_db_name:
+    comment:
+
+  'MTLSD':
+    runs:
+      absolute-image_orig_lsd_noval_mtrepro_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/ulbiw0rr
+        scores_db_name: 08-19_01-34_absolute__400k_benchmark_b
+      icy-parable_orig_lsd_noval_mtrepro_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/6qm0tlq9
+        scores_db_name: 08-19_01-34_icy-para__400k_benchmark
+        comment: 'bad training loss'
+      fat-microphone_orig_lsd_noval_mtrepro_q4:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/ga82d9w1
+        scores_db_name: 08-20_00-26_fat-micr__400k_benchmark
+    comment:
+
+  'MTLSD + BN':
+    runs:
+      plastic-power_bn_lsd_noval_bnmtrepro:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/crioqloy
+        scores_db_name: 08-20_00-23_plastic-__400k_benchmark_b
+    comment:
+
+  'AFF + BN + DT + CE':
+    runs:
+      obsolete-caviar_aff_bce_bdt_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/lmpwx30y
+        scores_db_name: 09-11_22-12_obsolete__400k_benchmark
+      joint-rout_aff_bce_bdt_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/82vy68f7
+        scores_db_name: 09-11_22-12_joint-ro__400k_benchmark
+      doughy-drink_aff_bce_bdt_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/o5fgp3mk
+        scores_db_name: 09-11_22-12_doughy-d__400k_benchmark
+    comment:
+
+  'MTLSD + BN + HW + DT + CE':
+    runs:
+      forgiving-yak_hl_nohw_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/07na9cba
+        scores_db_name: 09-11_22-18_forgivin__400k_benchmark
+      equidistant-barolo_hl_nohw_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/fuzt57dx
+        scores_db_name: 09-11_22-18_equidist__400k_benchmark
+      obvious-pitch_hl_nohw_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/uk69vtf1
+        scores_db_name: 09-11_22-19_obvious-__400k_benchmark
+    comment:
+
+  'MTLSD + BN + HL + HW + DT + CE':
+    runs:
+      similar-bar_hl_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/iwe44b4z
+        scores_db_name: 09-11_22-05_similar-__400k_benchmark
+      savory-buck_hl_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/l6s752u5
+        scores_db_name: 09-11_22-05_savory-b__400k_benchmark
+      matte-block_hl_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/30iaosif
+        scores_db_name: 09-11_22-05_matte-bl__400k_benchmark
+    comment:

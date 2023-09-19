@@ -88,8 +88,19 @@ common:
 i1_predict:
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-18_17-42_glum-coffer_resc_hl_ela_cps1044/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_01-10_muted-modulation_orig_lsd_combined_sw_j0126_v2_synth550_r1_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-19_01-34_absolute-image_orig_lsd_noval_mtrepro_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-19_01-34_icy-parable_orig_lsd_noval_mtrepro_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_00-26_fat-microphone_orig_lsd_noval_mtrepro_q4/model_checkpoint_400000.pt
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-19_01-34_absolute-image_orig_lsd_noval_mtrepro_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_00-23_plastic-power_bn_lsd_noval_bnmtrepro/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_21-54_largo-tungsten_aff_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-18_forgiving-yak_hl_nohw_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-19_obvious-pitch_hl_nohw_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_matte-block_hl_q3/model_checkpoint_400000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_similar-bar_hl_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_obsolete-caviar_aff_bce_bdt_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_joint-rout_aff_bce_bdt_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_doughy-drink_aff_bce_bdt_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-13_14-26_flat-donut_aff_bn_q1/model_checkpoint_400000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=125G", "--cpus-per-task=8", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -100,11 +111,12 @@ i1_predict:
   net_offset: [36, 212, 212]
 
   output_cfg:
-    pred_affs:       {idx: 1, out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
-    pred_lsds:       {idx: 0, out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_affs:             {out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
 
-#    pred_boundaries: {idx: 2, out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
-#    pred_hardness:   {idx: 3, out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+#    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+#    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
 
 ## Known to work, fall back if something breaks
 #i2_extract_fragments:
@@ -177,5 +189,5 @@ i6_extract_segmentation:
   num_workers: 6
   block_size: [21600, 21600, 21600]  # override block_size because larger blocks make more sense here
 #  threshold: 0.5
-  threshold: best_voi
-#  threshold: best_erl
+#  threshold: best_voi
+  threshold: best_erl

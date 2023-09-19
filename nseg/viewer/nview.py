@@ -68,7 +68,7 @@ viewer = neuroglancer.Viewer()
 
 
 
-def get_heatmap_shader(channel, scale=1.0, shift=0.0, cmap='inferno'):
+def get_heatmap_shader(channel, scale=1.0, shift=0.0, cmap='viridis'):
     assert cmap in ['inferno', 'viridis', 'colormapJet']
 
     # Almost jinja...
@@ -221,7 +221,9 @@ def open_dataset(f, ds):
 
 def get_layer_opts(dataset: str) -> dict:
     if dataset.endswith('hardness'):
-        return {'shader': get_heatmap_shader(0, scale=1.0, shift=0.)}
+        SHIFT = 0
+        SCALE = 1
+        return {'shader': get_heatmap_shader(0, scale=SCALE, shift=SHIFT)}
     if dataset.endswith('lsds'):
         return {'c': [0, 1, 2]}
         # return {'c': [3, 4, 5]}
