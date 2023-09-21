@@ -3,7 +3,7 @@ defaults:
   - model: hl_unet
   - loss: hl
   - lr_sched: none
-  - dataset: j0126_v2_2val
+  - dataset: j0126_v2_c350_2val
   - data_prep: v2
   - knossos_raw_to_zarr: default
   - cloudvolume_raw_to_zarr: default
@@ -129,9 +129,9 @@ eval:
     pred_affs: {out_dims: 3, out_dtype: uint8,   squeeze: true, scale: 255 }
     pred_lsds: {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255 }
     # TODO: More concise output cfg
-    pred_boundaries: {out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
-    pred_hardness: {out_dims: 1, out_dtype: float32, squeeze: true, scale: 1.0 }
-    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale: 1.0}
+#    pred_boundaries: {out_dims: 1, out_dtype: uint8,   squeeze: true, scale: 255 }
+#    pred_hardness: {out_dims: 1, out_dtype: float32, squeeze: true, scale: 1.0 }
+#    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale: 1.0}
 
 
   # roi_shape: [250, 250, 250]

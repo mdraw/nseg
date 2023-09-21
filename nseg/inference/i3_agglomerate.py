@@ -171,6 +171,7 @@ def start_worker(
 
     logging.info(f"worker {worker_id} started...")
 
+    # TODO: Rename 'agglomerate_blockwise' to 'i3_agglomerate_blockwise' when experiments are done
     output_dir = os.path.join(_hydra_run_dir, 'agglomerate_blockwise', merge_function, initial_timestamp)
 
     os.makedirs(output_dir, exist_ok=True)

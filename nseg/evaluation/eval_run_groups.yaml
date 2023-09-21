@@ -11,14 +11,12 @@ groups:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/dpc51suy
         scores_db_name:
         comment: 'bad training loss'
-    comment:
 
   'AFF + BN':
     runs:
       flat-donut_aff_bn_q1:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/z8ddnhk0
-        scores_db_name:
-    comment:
+        scores_db_name: 09-13_14-26_flat-don__400k_benchmark
 
   'MTLSD':
     runs:
@@ -32,14 +30,12 @@ groups:
       fat-microphone_orig_lsd_noval_mtrepro_q4:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/ga82d9w1
         scores_db_name: 08-20_00-26_fat-micr__400k_benchmark
-    comment:
 
   'MTLSD + BN':
     runs:
       plastic-power_bn_lsd_noval_bnmtrepro:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/crioqloy
         scores_db_name: 08-20_00-23_plastic-__400k_benchmark_b
-    comment:
 
   'AFF + BN + DT + CE':
     runs:
@@ -52,7 +48,6 @@ groups:
       doughy-drink_aff_bce_bdt_q3:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/o5fgp3mk
         scores_db_name: 09-11_22-12_doughy-d__400k_benchmark
-    comment:
 
   'MTLSD + BN + HW + DT + CE':
     runs:
@@ -65,7 +60,6 @@ groups:
       obvious-pitch_hl_nohw_q3:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/uk69vtf1
         scores_db_name: 09-11_22-19_obvious-__400k_benchmark
-    comment:
 
   'MTLSD + BN + HL + HW + DT + CE':
     runs:
@@ -78,4 +72,3 @@ groups:
       matte-block_hl_q3:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/30iaosif
         scores_db_name: 09-11_22-05_matte-bl__400k_benchmark
-    comment:

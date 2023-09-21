@@ -96,11 +96,12 @@ i1_predict:
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-18_forgiving-yak_hl_nohw_q1/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-19_obvious-pitch_hl_nohw_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_matte-block_hl_q3/model_checkpoint_400000.pt
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_similar-bar_hl_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_similar-bar_hl_q1/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_obsolete-caviar_aff_bce_bdt_q1/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_joint-rout_aff_bce_bdt_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_doughy-drink_aff_bce_bdt_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-13_14-26_flat-donut_aff_bn_q1/model_checkpoint_400000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_15-57_lead-aperture_hl_nolsd_q1/model_checkpoint_400000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=125G", "--cpus-per-task=8", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -112,11 +113,11 @@ i1_predict:
 
   output_cfg:
     pred_affs:             {out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
-    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
 
-#    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
-#    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
-#    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
 
 ## Known to work, fall back if something breaks
 #i2_extract_fragments:
