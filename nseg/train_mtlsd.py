@@ -56,7 +56,7 @@ def _get_include_fn(exts) -> Callable[[list[str]], bool]:
     return include_fn
 
 
-def densify_labels(lab: np.ndarray, dtype=np.uint8) -> np.ndarray:
+def densify_labels(lab: np.ndarray, dtype=np.uint8) -> tuple[np.ndarray, int]:
     old_ids = np.unique(lab)
     num_ids = old_ids.size
     new_ids = range(num_ids)

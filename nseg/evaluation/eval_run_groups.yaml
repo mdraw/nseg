@@ -1,5 +1,5 @@
 groups:
-  'AFF':
+  'AFF (replication)':
     runs:
       radial-array_aff_q1:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/fwx7kdll
@@ -18,18 +18,21 @@ groups:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/z8ddnhk0
         scores_db_name: 09-13_14-26_flat-don__400k_benchmark
 
-  'MTLSD':
+  'MTLSD (replication)':
     runs:
       absolute-image_orig_lsd_noval_mtrepro_q2:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/ulbiw0rr
         scores_db_name: 08-19_01-34_absolute__400k_benchmark_b
-      icy-parable_orig_lsd_noval_mtrepro_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/6qm0tlq9
-        scores_db_name: 08-19_01-34_icy-para__400k_benchmark
-        comment: 'bad training loss'
+#      icy-parable_orig_lsd_noval_mtrepro_q3:
+#        wandb: https://wandb.ai/mdth/nseg_hl6/runs/6qm0tlq9
+#        scores_db_name: 08-19_01-34_icy-para__400k_benchmark
+#        comment: 'bad training loss'
       fat-microphone_orig_lsd_noval_mtrepro_q4:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/ga82d9w1
         scores_db_name: 08-20_00-26_fat-micr__400k_benchmark
+      null-relaxation_lsd_mtrepro_q7:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/57ztdmdf
+        scores_db_name: 09-21_16-45_null-rel__400k_benchmark
 
   'MTLSD + BN':
     runs:
@@ -49,7 +52,19 @@ groups:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/o5fgp3mk
         scores_db_name: 09-11_22-12_doughy-d__400k_benchmark
 
-  'MTLSD + BN + HW + DT + CE':
+  'AFF + BN + HL + HW + DT + CE':
+    runs:
+      lead-aperture_hl_nolsd_q1:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/g5osiktb
+        scores_db_name: 09-19_15-57_lead-ape__400k_benchmark
+      ash-grip_hl_nolsd_q2:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/ngxkha7u
+        scores_db_name: 09-19_15-59_ash-grip__400k_benchmark
+      simmered-buy-in_hl_nolsd_q3:
+        wandb: https://wandb.ai/mdth/nseg_hl6/runs/7qzzvlku
+        scores_db_name: 09-19_16-00_simmered__400k_benchmark
+
+  'MTLSD + BN + HL + DT + CE':
     runs:
       forgiving-yak_hl_nohw_q1:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/07na9cba

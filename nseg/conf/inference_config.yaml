@@ -90,18 +90,27 @@ i1_predict:
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_01-10_muted-modulation_orig_lsd_combined_sw_j0126_v2_synth550_r1_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-19_01-34_absolute-image_orig_lsd_noval_mtrepro_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-19_01-34_icy-parable_orig_lsd_noval_mtrepro_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-21_16-45_null-relaxation_lsd_mtrepro_q7/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_00-26_fat-microphone_orig_lsd_noval_mtrepro_q4/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/08-20_00-23_plastic-power_bn_lsd_noval_bnmtrepro/model_checkpoint_400000.pt
+  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_21-10_weary-lighthouse_lsd_bn_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_21-10_witty-calendar_lsd_bn_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_21-54_largo-tungsten_aff_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-18_forgiving-yak_hl_nohw_q1/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-19_obvious-pitch_hl_nohw_q3/model_checkpoint_400000.pt
-#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_matte-block_hl_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_similar-bar_hl_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_savory-buck_hl_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-05_matte-block_hl_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_obsolete-caviar_aff_bce_bdt_q1/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_joint-rout_aff_bce_bdt_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-11_22-12_doughy-drink_aff_bce_bdt_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-13_14-26_flat-donut_aff_bn_q1/model_checkpoint_400000.pt
-  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_15-57_lead-aperture_hl_nolsd_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_21-06_tense-data_aff_bn_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_21-06_tranquil-investor_aff_bn_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_15-57_lead-aperture_hl_nolsd_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_15-59_ash-grip_hl_nolsd_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_16-00_simmered-buy-in_hl_nolsd_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_20-59_customer-cataract_aff_q4/model_checkpoint_400000.pt
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=125G", "--cpus-per-task=8", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -113,11 +122,11 @@ i1_predict:
 
   output_cfg:
     pred_affs:             {out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
-#    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
+    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
 
-    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
-    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
-    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+#    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
+#    pred_boundary_distmap: {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
 
 ## Known to work, fall back if something breaks
 #i2_extract_fragments:

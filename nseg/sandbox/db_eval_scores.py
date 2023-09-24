@@ -64,8 +64,9 @@ for doc in test_score_query:
     voi_split = scores_at_thresh.voi_split
 
     setup_score_entry = SimpleNamespace(**{
+        'setup_name': setup_name,
         'thresh': thresh,
-        'erl': erl,  # test erl on this threshold
+        'erl': erl / 1000,  # test erl on this threshold (µm)
         'voi': voi,  # test voi on this threshold
         'voi_merge': voi_merge,
         'voi_split': voi_split,
@@ -76,86 +77,19 @@ for doc in test_score_query:
 LATEX_OUT = True
 
 if LATEX_OUT:
-    print('Threshold & ERL & VOI & VOI_merge & VOI_split \\')
+    # print('Threshold & ERL & VOI & VOI_merge & VOI_split\n')
+    print('Method & ERL (µm) & VOI & VOI\\textsubscript{merge} & VOI_\\textsubscript{merge}\n')
 for group_name, scores_db_names in group_scores.items():
-    print(f'\n== {group_name} ==\n')
+    # print(f'\n== {group_name} ==\n')
+    print()
     for scores_db_name in scores_db_names:
         sc = test_scores.get(scores_db_name)
         if sc is None:
-            print(f'No test scores found for {scores_db_name}')
+            # print(f'No test scores found for {scores_db_name}')
             continue
-        print(f'{scores_db_name}')
+        # print(f'{scores_db_name}')
         if LATEX_OUT:
-            print(f'{sc.thresh:.0f} & {sc.erl:.0f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\')
+            # print(f'{group_name} & {sc.thresh:.0f} & {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\')
+            print(f'{group_name} & {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\ % run: {sc.setup_name} % thresh: {sc.thresh:.2f}')
         else:
-            print(f'Threshold: {sc.thresh}, ERL: {sc.erl:.0f}, VOI: {sc.voi:.3f}, VOI_split: {sc.voi_merge:.3f}, VOI_merge: {sc.voi_split:.3f}\n')
-
-
-
-
-
-
-
-
-
-
-
-
-# for setup_name, e in test_scores.items():
-#     print(f'{setup_name}')
-#     print(f'Threshold: {e.threshold} \t ERL: {e.erl:.0f} \t VOI: {e.voi:.3f}, VOI_split: {e.voi_split:.3f}, VOI_merge: {e.voi_merge:.3f}\n')
-
-
-
-# for setup_name, e in test_scores.items():
-#     print(f'{setup_name}')
-#     print(f'Threshold: {e.threshold} \t ERL: {e.erl:.0f} \t VOI: {e.voi:.3f}, VOI_split: {e.voi_split:.3f}, VOI_merge: {e.voi_merge:.3f}\n')
-
-
-# for doc in test_score_query:
-#     setup, thresh, erl, voi = doc['setup'], doc['thresh'], doc['erl']['test_best_val_threshold'], doc['voi']['test_best_val_threshold']
-#     print(f'{setup}\t VOI: {voi:.3f}, ERL: {erl:.0f}')
-
-"""
-08-20_00-26_fat-micr__400k_benchmark     VOI: 3.220, ERL: 10350
-08-18_17-42_glum-cof__400k_benchmark     VOI: 7.013, ERL: 3616
-08-20_01-09_crispy-s__400k_benchmark     VOI: 3.992, ERL: 12211
-09-11_21-54_largo-tu__400k_benchmark     VOI: 3.461, ERL: 14602
-08-19_01-34_absolute__400k_benchmark_b   VOI: 5.279, ERL: 7445
-08-20_00-23_plastic-__400k_benchmark_b   VOI: 5.497, ERL: 9487
-09-11_22-18_forgivin__400k_benchmark     VOI: 7.159, ERL: 3518
-09-11_22-05_matte-bl__400k_benchmark     VOI: 5.530, ERL: 8130
-09-11_22-18_equidist__400k_benchmark     VOI: 6.414, ERL: 5872
-09-11_22-05_savory-b__400k_benchmark     VOI: 4.135, ERL: 9330
-09-11_22-12_obsolete__400k_benchmark     VOI: 7.802, ERL: 2342
-09-11_22-05_similar-__400k_benchmark     VOI: 6.174, ERL: 6180
-09-11_22-19_obvious-__400k_benchmark     VOI: 5.192, ERL: 11133
-09-11_22-12_joint-ro__400k_benchmark     VOI: 7.895, ERL: 2743
-"""
-
-"""
-MTLSD:
-
-08-20_00-26_fat-micr__400k_benchmark     VOI: 3.220, ERL: 10350
-
-08-19_01-34_absolute__400k_benchmark_b   VOI: 5.279, ERL: 7445
-"""
-
-
-
-"""
-
-'MTLSD + BN + HW + DT + CE':
-
-{'setup': '09-11_22-18_forgivin__400k_benchmark', 'erl': {'test_best_val_threshold': 3517.5893924132674}}
-{'setup': '09-11_22-18_equidist__400k_benchmark', 'erl': {'test_best_val_threshold': 5872.3102967503555}}
-{'setup': '09-11_22-19_obvious-__400k_benchmark', 'erl': {'test_best_val_threshold': 11132.722620534822}}
-
-
-'MTLSD + BN + HL + HW + DT + CE':
-
-{'setup': '09-11_22-05_similar-__400k_benchmark', 'erl': {'test_best_val_threshold': 6180.167871609523}}
-{'setup': '09-11_22-05_savory-b__400k_benchmark', 'erl': {'test_best_val_threshold': 9329.968481718715}}
-{'setup': '09-11_22-05_matte-bl__400k_benchmark', 'erl': {'test_best_val_threshold': 8130.479271716295}}
-
-"""
+            print(f'Threshold: {sc.thresh}, ERL: {sc.erl:.3f}, VOI: {sc.voi:.3f}, VOI_split: {sc.voi_merge:.3f}, VOI_merge: {sc.voi_split:.3f}\n')
