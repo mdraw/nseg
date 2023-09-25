@@ -1,6 +1,15 @@
+"""
+Create Latex table and seaborn plots from result summaries queried from db
+"""
+
+import functools
+
 from pathlib import Path
 
 import pymongo
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
 
 from types import SimpleNamespace
 
@@ -45,12 +54,17 @@ test_score_query = client['scores']['best_thresh_results'].find(
 )
 
 test_scores = {}
+test_scores_puredict = {}
 for doc in test_score_query:
     # Get basic summary of test results
     setup_name = doc['setup']
     thresh = doc[tuning_metric]['val']  # threshold where best validation ERL score was achieved
     erl = doc['erl']['test_best_val_threshold']  # test ERL on this threshold
     voi = doc['voi']['test_best_val_threshold']  # test VOI on this threshold
+
+    if setup_name not in score_groups:
+        print(f'Skipping {setup_name} because it does not have a scores_db_name')
+        continue
 
     # Split and merge components of VOI are not stored in the same collection,
     #  so we need to query them separately by setup name
@@ -63,33 +77,153 @@ for doc in test_score_query:
     voi_merge = scores_at_thresh.voi_merge
     voi_split = scores_at_thresh.voi_split
 
-    setup_score_entry = SimpleNamespace(**{
+    setup_score_entry = {
         'setup_name': setup_name,
+        'group_name': score_groups[setup_name],
         'thresh': thresh,
         'erl': erl / 1000,  # test erl on this threshold (µm)
         'voi': voi,  # test voi on this threshold
         'voi_merge': voi_merge,
         'voi_split': voi_split,
-    })
+    }
 
     test_scores[setup_name] = setup_score_entry
+
+for setup_name, score_entry in test_scores.items():
+    n_greater = 0
+    for other_setup_name, other_score_entry in test_scores.items():
+        if other_score_entry['group_name'] != score_entry['group_name'] or other_setup_name == setup_name:
+            continue
+        if other_score_entry['erl'] > score_entry['erl']:
+            n_greater += 1
+    assert n_greater < 3, f'Found {n_greater} setups with higher ERL than {setup_name}'
+    ingroup_rank = {
+        0: 1,
+        1: 2,
+        2: 3,
+    }[n_greater]
+    score_entry['ingroup_rank'] = ingroup_rank
+
+
+# Generate latex table from results summary
 
 LATEX_OUT = True
 
 if LATEX_OUT:
-    # print('Threshold & ERL & VOI & VOI_merge & VOI_split\n')
-    print('Method & ERL (µm) & VOI & VOI\\textsubscript{merge} & VOI_\\textsubscript{merge}\n')
-for group_name, scores_db_names in group_scores.items():
+    print('Method & ERL (µm) $\\uparrow$ & VOI $\\downarrow$ & VOI\\textsubscript{merge} $\\downarrow$ & VOI\\textsubscript{split} $\\downarrow$ \\\\\n')
+for group_name, scores_db_names in sorted(group_scores.items()):
     # print(f'\n== {group_name} ==\n')
     print()
-    for scores_db_name in scores_db_names:
-        sc = test_scores.get(scores_db_name)
-        if sc is None:
-            # print(f'No test scores found for {scores_db_name}')
+    group_score_lines = {}
+    for i, scores_db_name in enumerate(scores_db_names):
+        scd = test_scores.get(scores_db_name)
+        if scd is None:
+            print(f'No test scores found for {scores_db_name}')
             continue
+        sc = SimpleNamespace(**scd)  # Enable dot notation
+        ingroup_rank = sc.ingroup_rank
+
         # print(f'{scores_db_name}')
         if LATEX_OUT:
-            # print(f'{group_name} & {sc.thresh:.0f} & {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\')
-            print(f'{group_name} & {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\ % run: {sc.setup_name} % thresh: {sc.thresh:.2f}')
+            score_line = f'& {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\ % run: {sc.setup_name} % thresh: {sc.thresh:.2f}'
+            # if i == 0:  # Only put group name on first line
+            #     score_line = f'{group_name} {score_line}'
+            # else:
+            #     padding = ' ' * len(group_name)
+            #     score_line = f'{padding} {score_line}'
+            score_line = f'{group_name}\\textsubscript{{{ingroup_rank}}} {score_line}'
+            # print(score_line)
         else:
-            print(f'Threshold: {sc.thresh}, ERL: {sc.erl:.3f}, VOI: {sc.voi:.3f}, VOI_split: {sc.voi_merge:.3f}, VOI_merge: {sc.voi_split:.3f}\n')
+            score_line = f'Threshold: {sc.thresh}, ERL: {sc.erl:.3f}, VOI: {sc.voi:.3f}, VOI_split: {sc.voi_merge:.3f}, VOI_merge: {sc.voi_split:.3f}\n'
+        group_score_lines[ingroup_rank] = score_line
+
+    for ingroup_rank in sorted(group_score_lines.keys()):
+        print(group_score_lines[ingroup_rank])
+    print('\\addlinespace')
+
+
+
+
+
+
+### Create grouped bar plot with seaborn
+
+plot_dir = Path('/cajal/scratch/projects/misc/mdraw/lsdex/tmp/grouped_plots')
+plot_dir.mkdir(exist_ok=True)
+# plot_ext = 'png'
+plot_ext = 'pdf'
+
+figsize = (16, 8)
+
+grouped_scores_df = pd.DataFrame.from_dict(test_scores, orient='index')
+grouped_scores_df.to_csv('./grouped_scores.csv')
+
+# exit(0)
+
+# TODO: Groups are fine but we need a good way to map setup_name to hue (each repeated experiment could receive a number for example)
+
+plottable_df = grouped_scores_df.astype({'ingroup_rank': 'string'})
+
+sorted_group_names = sorted(group_scores.keys())
+
+# def grouped_barplot(plottable_df):
+
+sns.set_theme(style="whitegrid")
+sns.set_context("paper", font_scale=1.2, rc={"lines.linewidth": 2.0})
+
+# fig, axes = plt.subplots(1, 2, figsize=(20, 10), tight_layout=True)
+#
+# erl_ax, voi_ax = axes
+
+## ERL
+fig, ax = plt.subplots(1, 1, figsize=figsize, tight_layout=True)
+
+# erl_ax, voi_ax = axes
+
+sns.barplot(
+    # ax=erl_ax,
+    data=plottable_df,
+    x='group_name',
+    order=sorted_group_names,
+    y='erl',
+    hue='ingroup_rank',
+    hue_order=['1', '2', '3'],
+)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.3f')
+
+# erl_ax.set_xlabel('')
+# erl_ax.set_ylabel('ERL (µm)')
+ax.legend_.remove()
+ax.set_xlabel('')
+ax.set_ylabel('ERL (µm)')
+# ax.legend_.remove()
+# ax.legend_.set_title('Experiment run')
+# ax.legend_.set_label(['1', '2', '2'])
+
+plt.savefig(plot_dir / f'grouped_erl.{plot_ext}', dpi=300)
+plt.close(fig)
+
+## VOI
+fig, ax = plt.subplots(1, 1, figsize=figsize, tight_layout=True)
+
+sns.barplot(
+    # ax=voi_ax,
+    data=plottable_df,
+    x='group_name',
+    order=sorted_group_names,
+    y='voi',
+    hue='ingroup_rank',
+    hue_order=['1', '2', '3'],
+)
+for i in ax.containers:
+    ax.bar_label(i, fmt='%.3f')
+
+ax.set_xlabel('')
+ax.set_ylabel('VOI')
+ax.legend_.remove()
+# ax.legend_.set_title('Experiment run')
+# ax.legend_.set_label(['1', '2', '2'])
+
+
+plt.savefig(plot_dir / f'grouped_voi.{plot_ext}', dpi=300)
