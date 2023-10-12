@@ -125,23 +125,23 @@ for group_name, scores_db_names in sorted(group_scores.items()):
 
         # print(f'{scores_db_name}')
         if LATEX_OUT:
-            score_line = f'& {sc.erl:.3f} & {sc.voi:.3f} & {sc.voi_merge:.3f} & {sc.voi_split:.3f} \\\\ % run: {sc.setup_name} % thresh: {sc.thresh:.2f}'
+            score_line = f'& {sc.erl:.2f} & {sc.voi:.2f} & {sc.voi_merge:.2f} & {sc.voi_split:.2f} \\\\ % run: {sc.setup_name} % thresh: {sc.thresh:.2f}'
             # if i == 0:  # Only put group name on first line
             #     score_line = f'{group_name} {score_line}'
             # else:
             #     padding = ' ' * len(group_name)
             #     score_line = f'{padding} {score_line}'
+            # score_line = f'python -m nseg.scripts.log_scores --enable-wandb {sc.setup_name} -o {group_name}_{ingroup_rank}'
             score_line = f'{group_name}\\textsubscript{{{ingroup_rank}}} {score_line}'
             # print(score_line)
         else:
-            score_line = f'Threshold: {sc.thresh}, ERL: {sc.erl:.3f}, VOI: {sc.voi:.3f}, VOI_split: {sc.voi_merge:.3f}, VOI_merge: {sc.voi_split:.3f}\n'
+            score_line = f'Threshold: {sc.thresh}, ERL: {sc.erl:.2f}, VOI: {sc.voi:.2f}, VOI_split: {sc.voi_merge:.2f}, VOI_merge: {sc.voi_split:.2f}\n'
         group_score_lines[ingroup_rank] = score_line
 
     for ingroup_rank in sorted(group_score_lines.keys()):
         print(group_score_lines[ingroup_rank])
-    print('\\addlinespace')
-
-
+    if LATEX_OUT:
+        print('\\addlinespace')
 
 
 
@@ -153,14 +153,27 @@ plot_dir.mkdir(exist_ok=True)
 # plot_ext = 'png'
 plot_ext = 'pdf'
 
-figsize = (16, 8)
+fmt = '%.2f'
+
+figsize = (10, 5)
 
 grouped_scores_df = pd.DataFrame.from_dict(test_scores, orient='index')
 grouped_scores_df.to_csv('./grouped_scores.csv')
 
+
 # exit(0)
 
 # TODO: Groups are fine but we need a good way to map setup_name to hue (each repeated experiment could receive a number for example)
+
+ddof = 1  # Delta degrees of freedom for std calculation, choose 0 for numpy default
+
+group_erl_std = grouped_scores_df.groupby(['group_name'])['erl'].std(ddof=ddof).round(3)
+group_voi_std = grouped_scores_df.groupby(['group_name'])['voi'].std(ddof=ddof).round(3)
+
+print()
+print(f'group_erl_std:\n{group_erl_std}')
+print(f'group_voi_std:\n{group_voi_std}')
+print()
 
 plottable_df = grouped_scores_df.astype({'ingroup_rank': 'string'})
 
@@ -174,6 +187,13 @@ sns.set_context("paper", font_scale=1.2, rc={"lines.linewidth": 2.0})
 # fig, axes = plt.subplots(1, 2, figsize=(20, 10), tight_layout=True)
 #
 # erl_ax, voi_ax = axes
+
+
+def _add_reported_scores_to(frame: pd.DataFrame) -> pd.DataFrame:
+
+
+plottable_df = _add_reported_scores_to(plottable_df)
+
 
 ## ERL
 fig, ax = plt.subplots(1, 1, figsize=figsize, tight_layout=True)
@@ -190,7 +210,7 @@ sns.barplot(
     hue_order=['1', '2', '3'],
 )
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.3f')
+    ax.bar_label(i, fmt=fmt)
 
 # erl_ax.set_xlabel('')
 # erl_ax.set_ylabel('ERL (µm)')
@@ -217,7 +237,7 @@ sns.barplot(
     hue_order=['1', '2', '3'],
 )
 for i in ax.containers:
-    ax.bar_label(i, fmt='%.3f')
+    ax.bar_label(i, fmt=fmt)
 
 ax.set_xlabel('')
 ax.set_ylabel('VOI')
