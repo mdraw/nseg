@@ -111,6 +111,25 @@ i1_predict:
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_15-59_ash-grip_hl_nolsd_q2/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-19_16-00_simmered-buy-in_hl_nolsd_q3/model_checkpoint_400000.pt
 #  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-22_20-59_customer-cataract_aff_q4/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-24_17-12_quick-castle_aff_q8/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_00-51_spicy-trench_hl_nobn_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_00-51_isomorphic-corona_hl_nobn_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_00-51_tangy-vehicle_hl_nobn_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_04-10_internal-galley_hl_nobn_nolsd_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_04-10_crabby-sole_hl_nobn_nolsd_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-26_04-12_buttery-residual_hl_nobn_nolsd_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_20-33_intense-golf_nodet_hl_nobn_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_20-33_rapid-silo_nodet_hl_nobn_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_20-33_greedy-laser_nodet_hl_nobn_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-28_18-11_slim-bagging_nodet_hl_nobn_nolsd_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-28_18-12_sweet-treble_nodet_hl_nobn_nolsd_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-28_18-12_witty-river_nodet_hl_nobn_nolsd_q3/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_22-41_snowy-plywood_nodet_hl_nobn_nobce_nolsd_q1/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_22-40_augmenting-gear_nodet_hl_nobn_nobce_nolsd_q2/model_checkpoint_400000.pt
+#  model_path: /u/mdraw/lsdex/v1/train_mtlsd/09-27_22-40_meek-pepato_nodet_hl_nobn_nobce_nolsd_q3/model_checkpoint_400000.pt
+
+
+
 
   num_workers: 100
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=125G", "--cpus-per-task=8", "--gres=gpu:1", "--job-name=ns01pr"]
@@ -122,7 +141,7 @@ i1_predict:
 
   output_cfg:
     pred_affs:             {out_dims:  3, out_dtype: uint8,   squeeze: true, scale: 255  }
-    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
+#    pred_lsds:             {out_dims: 10, out_dtype: uint8,   squeeze: true, scale: 255  }
 
 #    pred_boundaries:       {out_dims:  1, out_dtype: uint8,   squeeze: true, scale: 255  }
 #    pred_hardness:         {out_dims:  1, out_dtype: float32, squeeze: true, scale:   1.0}
@@ -152,7 +171,6 @@ i2_extract_fragments:
 i3_agglomerate:
   num_workers: 100
   merge_function: hist_quant_75
-#  slurm_options: ["--ntasks=1", "--time=7-0", "--mem=500G", "--cpus-per-task=32", "--job-name=ns03ag"]
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=250G", "--cpus-per-task=16", "--job-name=ns03ag"]
 
 
