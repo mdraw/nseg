@@ -398,7 +398,7 @@ class UNet(torch.nn.Module):
         self.enable_pre_cropping = enable_pre_cropping
 
         self.active_head_ids = range(self.num_heads) if active_head_ids is None else active_head_ids
-        self.detached_head_ids = range(self.num_heads) if detached_head_ids is None else detached_head_ids
+        self.detached_head_ids = [] if detached_head_ids is None else detached_head_ids
 
 
         # default arguments
