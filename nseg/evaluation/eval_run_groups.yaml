@@ -1,51 +1,21 @@
 groups:
-#  'AFF (replication)':
   'AFF':
     runs:
-#      radial-array_aff_q1:
-#        wandb: https://wandb.ai/mdth/nseg_hl6/runs/fwx7kdll
-#        scores_db_name:
-#        comment: 'bad training loss'
       largo-tungsten_aff_q2:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/lnx6nhni
         scores_db_name: 09-11_21-54_largo-tu__400k_benchmark
-#      plain-image_aff_q3:
-#        wandb: https://wandb.ai/mdth/nseg_hl6/runs/dpc51suy
-#        scores_db_name:
-#        comment: 'bad training loss'
       customer-cataract_aff_q4:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/tkghp0a9
         scores_db_name: 09-22_20-59_customer__400k_benchmark
       quick-castle_aff_q8:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/vvyn6zp6
         scores_db_name: 09-24_17-12_quick-ca__400k_benchmark
-#      tender-league_aff_q11:
-#        wandb: https://wandb.ai/mdth/nseg_hl6/runs/utz7qgfq
-#        scores_db_name: 09-24_20-01_tender-l__400k_benchmark
 
-#  'AFF\textsuperscript{BN}':
-  'AFF-N':
-    runs:
-      flat-donut_aff_bn_q1:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/z8ddnhk0
-        scores_db_name: 09-13_14-26_flat-don__400k_benchmark
-      tense-data_aff_bn_q2:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/oxurgvcl
-        scores_db_name: 09-22_21-06_tense-da__400k_benchmark_r
-      tranquil-investor_aff_bn_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/c087l1mu
-        scores_db_name: 09-22_21-06_tranquil__400k_benchmark_r
-
-#  'MTLSD (replication)':
   'MTLSD':
     runs:
       absolute-image_orig_lsd_noval_mtrepro_q2:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/ulbiw0rr
         scores_db_name: 08-19_01-34_absolute__400k_benchmark_b
-#      icy-parable_orig_lsd_noval_mtrepro_q3:
-#        wandb: https://wandb.ai/mdth/nseg_hl6/runs/6qm0tlq9
-#        scores_db_name: 08-19_01-34_icy-para__400k_benchmark
-#        comment: 'bad training loss'
       fat-microphone_orig_lsd_noval_mtrepro_q4:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/ga82d9w1
         scores_db_name: 08-20_00-26_fat-micr__400k_benchmark
@@ -53,71 +23,20 @@ groups:
         wandb: https://wandb.ai/mdth/nseg_hl6/runs/57ztdmdf
         scores_db_name: 09-21_16-45_null-rel__400k_benchmark
 
-#  'MTLSD\textsuperscript{BN}':
-  'MTLSD-N':
-    runs:
-      plastic-power_bn_lsd_noval_bnmtrepro:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/crioqloy
-        scores_db_name: 08-20_00-23_plastic-__400k_benchmark_b
-      weary-lighthouse_lsd_bn_q2:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/ija37teh
-        scores_db_name: 09-22_21-10_weary-li__400k_benchmark
-      witty-calendar_lsd_bn_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/u70l8tsy
-        scores_db_name: 09-22_21-10_witty-ca__400k_benchmark
-
-
-#    'AFF + BN + DT + CE':
-#      runs:
-#        obsolete-caviar_aff_bce_bdt_q1:
-#          wandb: https://wandb.ai/mdth/nseg_hl6/runs/lmpwx30y
-#          scores_db_name: 09-11_22-12_obsolete__400k_benchmark
-#        joint-rout_aff_bce_bdt_q2:
-#          wandb: https://wandb.ai/mdth/nseg_hl6/runs/82vy68f7
-#          scores_db_name: 09-11_22-12_joint-ro__400k_benchmark
-#        doughy-drink_aff_bce_bdt_q3:
-#          wandb: https://wandb.ai/mdth/nseg_hl6/runs/o5fgp3mk
-#          scores_db_name: 09-11_22-12_doughy-d__400k_benchmark
-
-#  'AFF + BN + HL + HW + DT + CE':
-#  'AHW':
   'NSEG-A':
     runs:
-      lead-aperture_hl_nolsd_q1:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/g5osiktb
-        scores_db_name: 09-19_15-57_lead-ape__400k_benchmark
-      ash-grip_hl_nolsd_q2:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/ngxkha7u
-        scores_db_name: 09-19_15-59_ash-grip__400k_benchmark
-      simmered-buy-in_hl_nolsd_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/7qzzvlku
-        scores_db_name: 09-19_16-00_simmered__400k_benchmark
+      intense-golf_nodet_hl_nobn_q1:
+        scores_db_name: 09-27_20-33_intense-__400k_benchmark
+      rapid-silo_nodet_hl_nobn_q2:
+        scores_db_name: 09-27_20-33_rapid-si__400k_benchmark
+      greedy-laser_nodet_hl_nobn_q3:
+        scores_db_name: 09-27_20-33_greedy-l__400k_benchmark
 
-#  'MTLSD + BN + HL + HW + DT + CE':
-#  'LHW':
   'NSEG-B':
     runs:
-      similar-bar_hl_q1:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/iwe44b4z
-        scores_db_name: 09-11_22-05_similar-__400k_benchmark
-      savory-buck_hl_q2:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/l6s752u5
-        scores_db_name: 09-11_22-05_savory-b__400k_benchmark
-      matte-block_hl_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/30iaosif
-        scores_db_name: 09-11_22-05_matte-bl__400k_benchmark
-
-
-#  'MTLSD + BN + HL + DT + CE':
-#  'LH':
-  'NSEG-C':
-    runs:
-      forgiving-yak_hl_nohw_q1:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/07na9cba
-        scores_db_name: 09-11_22-18_forgivin__400k_benchmark
-      equidistant-barolo_hl_nohw_q2:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/fuzt57dx
-        scores_db_name: 09-11_22-18_equidist__400k_benchmark
-      obvious-pitch_hl_nohw_q3:
-        wandb: https://wandb.ai/mdth/nseg_hl6/runs/uk69vtf1
-        scores_db_name: 09-11_22-19_obvious-__400k_benchmark
+      slim-bagging_nodet_hl_nobn_nolsd_q1:
+        scores_db_name: 09-28_18-11_slim-bag__400k_benchmark
+      sweet-treble_nodet_hl_nobn_nolsd_q2:
+        scores_db_name: 09-28_18-12_sweet-tr__400k_benchmark
+      witty-river_nodet_hl_nobn_nolsd_q3:
+        scores_db_name: 09-28_18-12_witty-ri__400k_benchmark
