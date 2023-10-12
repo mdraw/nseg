@@ -19,7 +19,7 @@ dynamic = ["version", "dependencies"]
 [project.scripts]
 nseg-train = "nseg.train:main"
 nseg-segment = "nseg.segment:main"
-nseg-inference = "nseg.inference.full_eval:main"
+nseg-eval = "nseg.inference.full_eval:main"
 
 [tool.setuptools]
 packages = ["nseg"]

@@ -31,4 +31,4 @@ Run in this order:
 
 ## Large-scale inference and evaluation (whole dataset or ROI)
 
-    python -m nseg.inference.full_eval
+    nseg-eval i1_predict.model_path=<PATH_TO_TRAINED_MODEL>
