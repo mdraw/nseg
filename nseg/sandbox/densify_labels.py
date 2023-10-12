@@ -1,13 +1,12 @@
 from pathlib import Path
 
-import napari
 import numpy as np
 import zarr
+from numcodecs import Zstd
 
 from funlib.segment.arrays import replace_values
 
 
-# @numba.jit(nopython=True, parallel=True)
 def densify_labels(lab: np.ndarray, dtype=np.uint64) -> tuple[np.ndarray, int]:
     old_ids = np.unique(lab)
     num_ids = old_ids.size
@@ -37,5 +36,5 @@ seg, num_ids = densify_labels(inarr, dtype=np.uint16)
 print(f'Done. Found {num_ids} IDs.')
 
 outzarr = zarr.open(output_path, mode='w')
-outzarr.create_dataset('volumes/segmentation', data=seg, chunks=(64, 64, 64), dtype=dtype)
+outzarr.create_dataset('volumes/segmentation', data=seg, chunks=(64, 64, 64), dtype=dtype, compressor=Zstd(5))
 
