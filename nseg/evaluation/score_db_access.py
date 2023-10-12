@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -125,6 +125,7 @@ def query_scores(
         enable_mpl=True,
         enable_wandb=True,
         verbose=True,
+        run_name=None,
 ):
     print_ = print if verbose else lambda *args, **kwargs: None
     # logging.info(f'Querying scores from {db_name}{collection_name}')
@@ -152,15 +153,15 @@ def query_scores(
         # markers['erl']['y'] = 10349
 
     if enable_mpl:
-        mpl_plot(df=df, collection_name=collection_name, markers=markers, plot_dir=plot_dir)
+        mpl_plot(df=df, collection_name=run_name or collection_name, markers=markers, plot_dir=plot_dir)
 
     if enable_wandb:
         wdf = wandb.Table(dataframe=df)
         voi_line = wandb.plot.line(wdf, x='threshold', y='voi', title='VOI')
         erl_line = wandb.plot.line(wdf, x='threshold', y='erl', title='ERL')
-        anno_str = db_name.split('_')[-1]
+        anno_str = collection_name.split('_')[-1]
         log_data = {
-            f'{anno_str}/scores_table': wdf,
+            # f'{anno_str}/scores_table': wdf,  # table is supported but not that useful in wandb
             f'{anno_str}/voi_line': voi_line,
             f'{anno_str}/erl_line': erl_line,
         }
@@ -178,6 +179,7 @@ def query_and_log_scores(
         enable_mpl: bool = True,
         enable_wandb: bool = True,
         verbose: bool = True,
+        run_name: Optional[str] = None,
 ):
     # A totally safe way to get model_name and roi_name, no way this could go wrong
     model_name = setup_name[:-10]
@@ -188,12 +190,14 @@ def query_and_log_scores(
     val_collection_name = f'{setup_name}_val'
     test_collection_name = f'{setup_name}_test'
 
+    run_name = run_name or setup_name
+
     if enable_wandb:
         wandb.init(
             entity='mdth',
             project='nseg_scores',
             dir=wandb_dir,
-            name=f'{setup_name}',
+            name=run_name,
             tags=[model_name, roi_name]
         )
 
@@ -206,6 +210,7 @@ def query_and_log_scores(
         enable_mpl=enable_mpl,
         enable_wandb=enable_wandb,
         verbose=verbose,
+        run_name=run_name,
     )
     query_scores(
         collection_name=test_collection_name,
@@ -217,6 +222,7 @@ def query_and_log_scores(
         enable_wandb=enable_wandb,
         markers=val_markers,
         verbose=verbose,
+        run_name=run_name,
     )
 
 
