@@ -18,6 +18,7 @@ for lib in ['OMP', 'OPENBLAS', 'MKL', 'NUMEXPR', 'VECLIB']:
 
 
 import logging
+import random
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -118,6 +119,16 @@ def train(cfg: DictConfig) -> None:
     _training_start_time = time.time()
     tr_root = Path(cfg.dataset.tr_root)
     tr_files = sorted(list(tr_root.glob('*.zarr')))
+
+    # Seed all relevant RNGs. Note that gp.PreCache workers re-randomize seeds nondeterministically
+    #  because there is no way to make Precaching determinisitic anyways.
+    random_seed = cfg.get('random_seed')
+    if random_seed is not None:
+        random_seed = int(random_seed)
+        logging.info(f'Using random seed {random_seed}')
+        random.seed(random_seed)
+        torch.manual_seed(random_seed)
+        np.random.seed(random_seed)
 
     # Figure out what outputs we want to train (only outputs with nonzero loss term weights are considered)
     # Note that aff(inity) is always included as it's necessary for segmentation
