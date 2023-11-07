@@ -1,0 +1,16 @@
+_name: default
+
+_dir: /cajal/scratch/projects/misc/mdraw/data/synthtreeseg
+_ver: v2_seed0
+
+
+lab_input_path: ${._dir}/segmentation_downsampled_${._ver}.pkl
+raw_input_path: ${._dir}/em_${._ver}.npy
+
+dest_zarr_path: ${._dir}/em_and_seg_${._ver}.zarr
+
+resolution: [20, 9, 9]
+chunk_shape: [128, 128, 128]
+
+zarr_zip: false
+dry_run: false
