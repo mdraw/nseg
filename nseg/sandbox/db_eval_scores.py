@@ -189,11 +189,6 @@ sns.set_context("paper", font_scale=1.2, rc={"lines.linewidth": 2.0})
 # erl_ax, voi_ax = axes
 
 
-def _add_reported_scores_to(frame: pd.DataFrame) -> pd.DataFrame:
-
-
-plottable_df = _add_reported_scores_to(plottable_df)
-
 
 ## ERL
 fig, ax = plt.subplots(1, 1, figsize=figsize, tight_layout=True)
