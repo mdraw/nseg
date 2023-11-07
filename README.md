@@ -1,5 +1,6 @@
-# **nseg** - Improving Neuron Instance Segmentation
+# **nseg** - Comparing Methods for Neuron Instance Segmentation
 
+Code for experimentation with neuron instance segmentation methods based on multi-task learning and [Local Shape Descriptors](https://localshapedescriptors.github.io/).
 
 ## Installation
 
