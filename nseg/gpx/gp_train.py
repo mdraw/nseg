@@ -254,9 +254,14 @@ class Train(GenericTrain):
             self.loss = self.loss.to(self.device)
 
         if self.resume:
-            checkpoint, self.iteration = self._get_latest_checkpoint(
-                self.checkpoint_basename
-            )
+            resume_str = str(self.resume)
+            if resume_str.endswith('.pth') or resume_str.endswith('.pt'):
+                checkpoint = self.resume
+                self.iteration = 0
+            else:
+                checkpoint, self.iteration = self._get_latest_checkpoint(
+                    self.checkpoint_basename
+                )
 
             if checkpoint is not None:
 

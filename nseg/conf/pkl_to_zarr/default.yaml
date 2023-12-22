@@ -2,15 +2,19 @@ _name: default
 
 _dir: /cajal/scratch/projects/misc/mdraw/data/synthtreeseg
 _ver: v2_seed0
+#_ver: v18_seed0
 
 
 lab_input_path: ${._dir}/segmentation_downsampled_${._ver}.pkl
 raw_input_path: ${._dir}/em_${._ver}.npy
 
-dest_zarr_path: ${._dir}/em_and_seg_${._ver}.zarr
+dest_zarr_path: ${._dir}/p_em_and_seg_${._ver}.zarr
 
 resolution: [20, 9, 9]
 chunk_shape: [128, 128, 128]
+
+pad_amount: [64, 128, 128]  # pad at each side with these voxel counts (z, y, x)
+pad_mode: symmetric  # Symmetric is probably best suited, see https://arxiv.org/abs/2010.02178v1
 
 zarr_zip: false
 dry_run: false

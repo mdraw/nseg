@@ -29,6 +29,14 @@ def main(cfg: DictConfig) -> None:
     raw *= 255  # Scale from [0, 1] to [0, 255]
     raw_u8 = raw.astype(np.uint8)
 
+    pad_amount = cfg.pkl_to_zarr.get('pad_amount')
+    if pad_amount is not None:
+        pad_mode = cfg.pkl_to_zarr.get('pad_mode')
+        logging.info(f'Padding raw by {pad_amount} with mode {pad_mode}')
+        pz, py, px = pad_amount
+        raw_u8 = np.pad(raw_u8, ((pz, pz), (py, py), (px, px)), mode=pad_mode)
+        logging.info(f'Padded raw shape: {raw_u8.shape}')
+
     lab_u64 = seg.astype(np.uint64)
 
     lab_mask_u8 = np.ones_like(lab_u64).astype(np.uint8)
@@ -40,6 +48,8 @@ def main(cfg: DictConfig) -> None:
 
     lab_vx_offset = raw_shape // 2 - lab_shape // 2
     lab_nm_offset = resolution * lab_vx_offset  # scale from voxels to nanometers
+
+    logging.info(f'{lab_vx_offset=}, {lab_nm_offset=}')
 
     raw_attrs_dict = {'resolution': resolution.tolist(), 'offset': [0, 0, 0]}
     lab_attrs_dict = {'resolution': resolution.tolist(), 'offset': lab_nm_offset.tolist()}

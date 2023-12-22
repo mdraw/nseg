@@ -1,12 +1,15 @@
 # https://github.com/funkelab/lsd/blob/master/lsd/tutorial/notebooks/segment.ipynb
+from copy import deepcopy
 
 import logging
+import pickle
 from pathlib import Path
 from typing import Optional
 import torch
 import gunpowder as gp
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import waterz
 import zarr
 from funlib.evaluate import rand_voi
@@ -26,8 +29,7 @@ from nseg.gpx.gp_scan import Scan
 from nseg.gpx.gp_boundaries import ArgMax, SoftMax, Take
 
 from nseg.conf import DictConfig, hydra
-from nseg.eval_utils import CubeEvalResult
-
+from nseg.eval_utils import CubeEvalResult, compute_synem_metrics
 
 # Agglomeration method specs for waterz. From https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/workers/agglomerate_worker.py#L29
 waterz_merge_function = {
@@ -344,7 +346,7 @@ def predict_unlabeled_zarr(cfg, raw_path: Path | str, checkpoint_path: Optional[
 # TODO: For roi-constrained inference, try using something like this: https://github.com/funkelab/lsd/blob/fc812095328ffe6640b2b3bec77230b384e8687f/lsd/tutorial/scripts/01_predict_blockwise.py#L91-L100
 
 # TODO: Add option to use empty requests and directly write outputs to zarr, see https://funkelab.github.io/gunpowder/tutorial_simple_pipeline.html#predicting-on-a-whole-image
-def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> tuple[np.ndarray, ...]:
+def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None, pad_raw: bool = False) -> tuple[np.ndarray, ...]:
     """Run scan inference on unlabeled data (or labeled data where labels should not be used).
     Directly returns the outputs as numpy arrays."""
 
@@ -400,9 +402,15 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
 
     with gp.build(source):
         if cfg.eval.roi_shape is None:
-            source_roi = source.spec[raw].roi
-            total_input_roi = source_roi
-            total_output_roi = source_roi.grow(-context, -context)
+            if pad_raw:
+                source_roi = source.spec[raw].roi
+                # total_input_roi = source_roi.grow(context, context)
+                total_input_roi = source_roi
+                total_output_roi = source_roi
+            else:
+                source_roi = source.spec[raw].roi
+                total_input_roi = source_roi
+                total_output_roi = source_roi.grow(-context, -context)
         else:
             _off = voxel_size * 0  # ~0 is not intuitive but it works? The ROI shape is apparently auto-centered~. Edit: Apparently not...
             # _off = voxel_size *
@@ -444,6 +452,12 @@ def predict_unlabeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path 
     scan = gp.Scan(scan_request)
 
     pipeline = source
+    if pad_raw:
+        pipeline += gp.Pad(
+            raw,
+            None,
+            # gp.Coordinate(context),
+        )
     pipeline += gp.Normalize(raw)
     # pipeline += gp.Unsqueeze([raw])
 
@@ -620,71 +634,6 @@ def sweep_segmentation_threshs(affinities, waterz_thresholds, fragment_threshold
     # return segmentation, fragments, boundary_distances
 
 
-def get_scoring_segmentation(affinities, fragment_threshold=0.5, epsilon_agglomerate=0, gt_seg=None):
-    fragments, boundary_distances = watershed_from_affinities(affinities, fragment_threshold=fragment_threshold)  # [0]
-
-    # Based on parralel_fragments.watershed_in_block(), see
-    #  https://github.com/funkelab/lsd/blob/b6aee2fd0c87bc70a52ea77e85f24cc48bc4f437/lsd/post/parallel_fragments.py#L149
-    # TODO: Haven't managed to get good results from this yet. Maybe some arguments have to be changed? scoring_function?
-    assert epsilon_agglomerate > 0
-
-    print(f'Performing initial fragment agglomeration until {epsilon_agglomerate}')
-
-    # TODO: Multiply with mask
-    fragments_data = fragments.astype(np.uint64)
-    affs = affinities.astype(np.float32)
-
-    generator = waterz.agglomerate(
-        affs=affs,
-        thresholds=[epsilon_agglomerate],
-        fragments=fragments_data,
-        scoring_function='OneMinus<HistogramQuantileAffinity<RegionGraphType, 25, ScoreValue, 256, false>>',
-        discretize_queue=256,
-        return_merge_history=False,
-        return_region_graph=False,
-        gt=gt_seg
-    )
-    fragments_data[:] = next(generator)
-
-    # cleanup generator
-    for _ in generator:
-        pass
-
-    segmentation = fragments_data
-
-    return segmentation, fragments, boundary_distances
-
-
-def mpl_vis(raw, segmentation, pred_affs, pred_lsds):
-    n_channels = raw.shape[0]
-    fig, axes = plt.subplots(
-        3,
-        10,  # 14 + n_channels,
-        figsize=(20, 6),
-        sharex=True,
-        sharey=True,
-        squeeze=False)
-    # view predictions (for lsds we will just view the mean offset component)
-    for i in range(n_channels):
-        axes[0][i].imshow(raw[i][raw.shape[1] // 2], cmap='gray')
-    axes[1][0].imshow(np.squeeze(pred_affs[0][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[1][1].imshow(np.squeeze(pred_affs[1][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[1][2].imshow(np.squeeze(pred_affs[2][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][0].imshow(np.squeeze(pred_lsds[0][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][1].imshow(np.squeeze(pred_lsds[1][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][2].imshow(np.squeeze(pred_lsds[2][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][3].imshow(np.squeeze(pred_lsds[3][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][4].imshow(np.squeeze(pred_lsds[4][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][5].imshow(np.squeeze(pred_lsds[5][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][6].imshow(np.squeeze(pred_lsds[6][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][7].imshow(np.squeeze(pred_lsds[7][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][8].imshow(np.squeeze(pred_lsds[8][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[2][9].imshow(np.squeeze(pred_lsds[9][pred_affs.shape[1] // 2]), cmap='jet')
-    axes[1][3].imshow(create_lut(np.squeeze(segmentation)[segmentation.shape[0] // 2]))
-    # plt.show()
-    return fig, axes
-
-
 def get_mean_report(reports: dict) -> dict:
     # Get keys of second level, i.e. values of first level. These are the keys that will be used for aggregation.
     report_keys = next(iter(reports.values()))
@@ -718,8 +667,10 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
     cube_root = Path(cfg.eval.cube_root)
     if checkpoint_path is None:  # fall back to cfg path if not overridden
         checkpoint_path = cfg.eval.checkpoint_path
-
-    raw_paths = list(cube_root.glob('*.zarr'))
+    if cube_root.name.endswith('.zarr'):
+        raw_paths = [cube_root]
+    else:
+        raw_paths = list(cube_root.glob('*.zarr'))
 
     if cfg.eval.max_eval_cubes is not None:
         raw_paths = raw_paths[:cfg.eval.max_eval_cubes]
@@ -752,17 +703,15 @@ def eval_cubes(cfg: DictConfig, checkpoint_path: Optional[Path] = None, enable_z
     return cube_eval_results
 
 
-def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True):
+def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = None, enable_zarr_results=True, auto_testcube_eval=True):
     # raw, pred_lsds, pred_affs, pred_hardness = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    batch = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # raw_path = '/cajal/scratch/projects/misc/mdraw/data/fullraw_fromknossos_j0126/j0126.zarr'
-    # predict_unlabeled_zarr(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
-    # exit()
-    ## Uncomment when predict_labeled works
-    # batch = predict_labeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path)
+    # pad_raw = True
+    pad_raw = False
+    print(f'pad_raw: {pad_raw}')
+
+    batch = predict_unlabeled(cfg=cfg, raw_path=raw_path, checkpoint_path=checkpoint_path, pad_raw=pad_raw)
     raw = batch['raw']
     pred_affs = batch['pred_affs']
-
 
     data = zarr.open(str(raw_path), 'r')
     gt_seg = np.array(data[cfg.dataset.gt_name])  # type: ignore
@@ -776,51 +725,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     aff_nhood = cfg.labels.aff.nhood
     gt_affs = gp.add_affinities.seg_to_affgraph(gt_seg.astype(np.int32), nhood=aff_nhood).astype(np.float32)
     cropped_pred_affs, _ = center_crop(pred_affs, gt_affs)
-
-    lsd_sigma = (cfg.labels.lsd.sigma, ) * 3
-    lsd_downsample = cfg.labels.lsd.downsample
-
-    gt_lsds = get_local_shape_descriptors(
-        segmentation=gt_seg,
-        sigma=lsd_sigma,
-        downsample=lsd_downsample,
-    )
-
-    pred_lsds = batch.get('pred_lsds')
-    pred_boundaries = batch.get('pred_boundaries')
-    pred_hardness = batch.get('pred_hardness')
-
     cropped_raw, _ = center_crop(raw, gt_seg)
-
-    cropped_pred_lsds, _ = center_crop(pred_lsds, gt_lsds)
-
-    if pred_hardness is None:
-        cropped_pred_hardness = None
-    else:
-        cropped_pred_hardness, _ = center_crop(pred_hardness, gt_seg)
-
-    # TODO: These weights are actually different during training - see gp.BalanceLabels
-    lsds_weights = 1.
-    affs_weights = 1.
-
-    # loss_class = import_symbol(cfg.loss.loss_class)
-    # loss_init_kwargs = cfg.loss.get('init_kwargs', {})
-    # loss_f = loss_class(**loss_init_kwargs)
-
-    # eval_loss = loss_f(
-    eval_loss = WeightedMSELoss()(
-        pred_lsds=torch.as_tensor(cropped_pred_lsds),
-        gt_lsds=torch.as_tensor(gt_lsds),
-        lsds_weights=torch.as_tensor(lsds_weights),
-        pred_affs=torch.as_tensor(cropped_pred_affs),
-        gt_affs=torch.as_tensor(gt_affs),
-        affs_weights=torch.as_tensor(affs_weights),
-        # hardness_prediction=torch.as_tensor(cropped_pred_hardness),
-    ).item()
-
-    logging.info(f'Eval loss (hardcoded MSE): {eval_loss:.3f}')
-
-    # print(f'{pred_affs.shape=}, {ws_affs.shape=}')
 
     # higher thresholds will merge more, lower thresholds will split more
     threshold = cfg.eval.threshold
@@ -849,33 +754,49 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
     )
 
     cropped_pred_frag, _ = center_crop(pred_frag, gt_seg)
-    cropped_pred_seg, _ = center_crop(pred_seg, gt_seg)
+    cropped_pred_seg, cropped_gt_seg = center_crop(pred_seg, gt_seg)
 
     rand_voi_report = rand_voi(
-        gt_seg,
+        cropped_gt_seg,
         cropped_pred_seg,  # segment_ids,
         return_cluster_scores=False
     )
+
     voi = rand_voi_report["voi_split"] + rand_voi_report["voi_merge"]
     rand_voi_report['voi'] = voi
 
-    rand_voi_report['loss'] = eval_loss
+    gt_skel_name = f'skeleton{raw_path.stem[raw_path.stem.find("_v"):]}.pkl'
+    gt_skel_path = raw_path.with_name(gt_skel_name)
+    print(f'Loading GT skeleton from {gt_skel_path}')
+    assert gt_skel_path.is_file()
+    gt_skel = pickle.load(open(gt_skel_path, 'rb'))
+
+    nerl, voi_skel, voi_dense = compute_synem_metrics(
+        pred=cropped_pred_seg,
+        # pred=pred_seg,
+        gt=cropped_gt_seg,
+        # gt=gt_seg,
+        gt_skel=gt_skel,
+        tag='padraw' if pad_raw else 'cropgt',
+        mode='m',
+    )
 
     result_arrays = dict(
         raw=raw,
-        pred_affs=pred_affs,
-        pred_lsds=pred_lsds,
-        pred_seg=pred_seg,
-        pred_frag=pred_frag,
-        cropped_raw=cropped_raw,
+        # pred_affs=pred_affs,
+        # pred_lsds=pred_lsds,
+        # pred_seg=pred_seg,
+        # pred_frag=pred_frag,
+        # cropped_raw=cropped_raw,
         cropped_pred_affs=cropped_pred_affs,
-        cropped_pred_lsds=cropped_pred_lsds,
+        # cropped_pred_lsds=cropped_pred_lsds,
         cropped_pred_seg=cropped_pred_seg,
         cropped_pred_frag=cropped_pred_frag,
-        cropped_pred_hardness=cropped_pred_hardness,
+        # cropped_pred_hardness=cropped_pred_hardness,
         gt_seg=gt_seg,
-        gt_affs=gt_affs,
-        gt_lsds=gt_lsds,
+        cropped_gt_seg=cropped_gt_seg,
+        # gt_affs=gt_affs,
+        # gt_lsds=gt_lsds,
     )
     result_arrays = {k: v for k, v in result_arrays.items() if v is not None}
 
@@ -884,245 +805,70 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
         arrays=result_arrays,
     )
 
+    _checkpoint_path = cfg.eval.checkpoint if checkpoint_path is None else checkpoint_path  # Fall back to cfg ckpt
+    _run_name = _get_run_name_from_checkpoint_path(_checkpoint_path)
+    _fname = raw_path.name
+
     result_zarr_root = cfg.eval.result_zarr_root
     write_groups = cfg.eval.get('write_groups', None)
     if enable_zarr_results and result_zarr_root is not None:
-        _fname = raw_path.name
-        _checkpoint_path = cfg.eval.checkpoint if checkpoint_path is None else checkpoint_path  # Fall back to cfg ckpt
-        _run_name = _get_run_name_from_checkpoint_path(_checkpoint_path)
-        result_zarr_path = Path(result_zarr_root) / f'results_{_run_name}_{_fname}'
+        result_zarr_path = Path(result_zarr_root) / f'results_{_run_name}_{_fname}_out.zarr'
         eval_result.write_zarr(result_zarr_path, groups=write_groups)
 
     logging.info(f'VOI: {voi}')
 
-    return eval_result
+    score_file = Path(result_zarr_root) / 'results_score.txt'
+    score_sheet = Path(result_zarr_root) / 'results_score.xlsx'
 
+    # str_padraw = 'padraw' if pad_raw else 'cropgt'
+    with open(score_file, 'a') as f:
+        f.write(f'{_fname} @ {_run_name} (threshold {threshold})\n')
+        f.write(f'VOI (dense): {voi_dense:.4f}\n')
+        f.write(f'VOI (skel): {voi_skel:.4f}\n')
+        f.write(f'NERL * 100: {nerl * 100:.6f}\n')
+        f.write('\n')
 
-# TODO: Fix remaining errors
-def predict_labeled(cfg, raw_path: Path | str, checkpoint_path: Optional[Path | str] = None) -> dict[str, np.ndarray]:
-    """Run scan inference on labeled data."""
+    # Create a DataFrame with the scores
+    df_new = pd.DataFrame({
+        'File': [_fname],
+        'Run Name': [_run_name],
+        'VOI (dense)': [voi_dense],
+        'VOI (skel)': [voi_skel],
+        'NERL * 100': [nerl * 100],
+        'Threshold': [threshold],
+        # 'Pad/Crop': [str_padraw],
+    })
 
-    voxel_size = gp.Coordinate(cfg.dataset.voxel_size)
-    # Prefer ev_inp_shape if specified, use regular inp_shape otherwise
-    input_shape = gp.Coordinate(
-        cfg.model.backbone.get('ev_inp_shape', cfg.model.backbone.inp_shape)
-    )
-    input_size = input_shape * voxel_size
-    offset = gp.Coordinate(cfg.model.backbone.offset)
-    output_shape = input_shape - offset
-    output_size = output_shape * voxel_size
+    # Check if the Excel file exists
+    if score_sheet.is_file():
+        # If it does, load the existing data
+        df_old = pd.read_excel(score_sheet)
+        # Append the new data
+        df = pd.concat([df_old, df_new])
+    else:
+        df = df_new
 
-    raw = gp.ArrayKey('RAW')
-    labels = gp.ArrayKey('LABELS')
-    gt_lsds = gp.ArrayKey('GT_LSDS')
-    lsds_weights = gp.ArrayKey('LSDS_WEIGHTS')
-    pred_lsds = gp.ArrayKey('PRED_LSDS')
-    gt_affs = gp.ArrayKey('GT_AFFS')
-    affs_weights = gp.ArrayKey('AFFS_WEIGHTS')
-    pred_affs = gp.ArrayKey('PRED_AFFS')
-    pred_hardness = gp.ArrayKey('PRED_HARDNESS')
+    # Write the data back to the Excel file
+    df.to_excel(score_sheet, index=False)
 
-    labels_mask = gp.ArrayKey('GT_LABELS_MASK')
-    gt_affs_mask = gp.ArrayKey('GT_AFFINITIES_MASK')
-
-
-    # TODO: Investigate input / output shapes w.r.t. offsets - output sizes don't always match each other
-    context = (input_size - output_size) / 2
-
-    source_data_dict = {
-        raw: cfg.dataset.raw_name,
-        labels: cfg.dataset.gt_name,
-        labels_mask: cfg.dataset.mask_name,
-    }
-    source_array_specs = {
-        raw: gp.ArraySpec(interpolatable=True),
-        labels: gp.ArraySpec(interpolatable=False),
-        labels_mask: gp.ArraySpec(interpolatable=False),
-    }
-
-    source = ZarrSource(
-        str(raw_path),
-        source_data_dict,
-        source_array_specs,
-    )
-
-    # if cfg.dataset.labels_padding is not None:
-    #     # We need more padding than for training, so multiply by constant factor
-    #     # TODO: Figure out how much padding is actually needed
-    #     # labels_padding = gp.Coordinate(cfg.dataset.labels_padding) * 5
-    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
-    #     # labels_padding = gp.Coordinate([8400, 7200, 7200])
-    #     source += gp.Pad(labels, labels_padding)
-    #     source += gp.Pad(labels_mask, labels_padding)
-
-    source += gp.GrowBoundary(
-        labels,
-        mask=labels_mask,
-        steps=1,
-        only_xy=True
-    )
-
-    source += AddLocalShapeDescriptor(
-        labels,
-        gt_lsds,
-        lsds_mask=lsds_weights,
-        **cfg.labels.lsd
-    )
-
-    neighborhood = cfg.labels.aff.nhood
-
-    source += gp.AddAffinities(
-        affinity_neighborhood=neighborhood,
-        labels=labels,
-        affinities=gt_affs,
-        labels_mask=labels_mask,
-        affinities_mask=gt_affs_mask,
-        dtype=np.float32
-    )
-
-    # TODO (IMPORTANT): Synchronize balance with training - here we rebalance based on _current_ batch stats.
-    # Currently there is no way to keep this in sync (not even among training batches), so results are not directly comparable!
-    source += gp.BalanceLabels(
-        gt_affs,
-        affs_weights,
-        gt_affs_mask,
-    )
-
-    source += gp.Unsqueeze([raw])
-
-    # if cfg.dataset.labels_padding is not None:
-    #     labels_padding = gp.Coordinate(cfg.dataset.labels_padding)
-    #     source += gp.Pad(labels, labels_padding)
-
-    with gp.build(source):
-        if cfg.eval.roi_shape is None:
-            # source_roi = source.spec[raw].roi
-            # total_input_roi = source_roi
-            # total_output_roi = source_roi.grow(-context, -context)
-            output_roi = source.spec[labels].roi
-            # output_roi = gp.Roi((100, 100, 100), (150, 150, 150)) * voxel_size
-            # output_roi = gp.Roi((100, 40, 40), output_shape) * voxel_size
-            source_roi = output_roi.grow(context, context)
-            total_input_roi = source_roi
-            total_output_roi = output_roi
+    if auto_testcube_eval and raw_path.stem.endswith('seed1'):
+        testcube_path = raw_path.with_stem(raw_path.stem.replace('seed1', 'seed2'))
+        if testcube_path.exists():
+            logging.info('Auto-evaluating associated testcube...')
+            test_cfg = deepcopy(cfg)
+            test_cfg.eval.waterz_threshold_sweep_linspace = None  # Disable sweep for testcube eval
+            test_cfg.eval.threshold = threshold
+            run_eval(
+                cfg=test_cfg,
+                raw_path=testcube_path,
+                checkpoint_path=checkpoint_path,
+                enable_zarr_results=enable_zarr_results,
+                auto_testcube_eval=False
+            )
         else:
-            _off = voxel_size * 0  # ~0 is not intuitive but it works? The ROI shape is apparently auto-centered~. Edit: Apparently not...
-            # _off = voxel_size *
-            raise NotImplementedError
-            _sha = voxel_size * tuple(cfg.eval.roi_shape)
-            total_output_roi = gp.Roi(offset=_off, shape=_sha)
-            total_input_roi = total_output_roi.grow(context, context)
-            # total_input_roi = gp.Roi(offset=_off, shape=_sha)
-            # total_output_roi = total_input_roi.grow(-context, -context)
+            logging.info(f'No testcube found at {testcube_path}, skipping auto test eval')
 
-        # _gtlabel_shape = voxel_size * (8, 8, 8)  # TODO!
-        # _gtlabel_off = voxel_size * (250, 250, 250)
-        # label_roi = gp.Roi(offset=_gtlabel_off, shape=_gtlabel_shape)
-
-
-    # model = get_mtlsdmodel()  # MtlsdModel()
-    model = build_mtlsdmodel(cfg.model)
-
-    # set model to eval mode
-    model.eval()
-
-    if checkpoint_path is None:  # Fall back to cfg checkpoint
-        checkpoint_path = cfg.eval.checkpoint
-
-    # add a predict node
-    predict = Predict(
-        model=model,
-        checkpoint=checkpoint_path,
-        inputs={
-            'input': raw
-        },
-        outputs={
-            0: pred_lsds,
-            1: pred_affs,
-            2: pred_hardness
-        }
-    )
-
-    scan_request = gp.BatchRequest()
-
-    scan_request.add(raw, input_size)
-    scan_request.add(labels, output_size)
-    scan_request.add(gt_lsds, output_size)
-    scan_request.add(lsds_weights, output_size)
-    scan_request.add(pred_lsds, output_size)
-    scan_request.add(gt_affs, output_size)
-    scan_request.add(affs_weights, output_size)
-    scan_request.add(pred_affs, output_size)
-    scan_request.add(pred_hardness, output_size)
-
-    # this will scan in chunks equal to the input/output sizes of the respective arrays
-    scan = gp.Scan(scan_request)
-
-    pipeline = source
-    pipeline += gp.Normalize(raw)
-    # pipeline += gp.Unsqueeze([raw])
-    pipeline += gp.Stack(1)
-
-    pipeline += gp.IntensityScaleShift(raw, 2, -1)  # Rescale/shift to training value range
-
-    pipeline += predict
-
-    pipeline += gp.IntensityScaleShift(raw, 0.5, 0.5)  # Rescale/shift back for snapshot outputs
-
-    pipeline += scan
-    # pipeline += gp.Squeeze([raw, pred_lsds, pred_affs, pred_hardness])
-
-    predict_request = gp.BatchRequest()
-
-    # predict_request.add(raw, total_input_roi.get_end())
-    # predict_request.add(pred_lsds, total_output_roi.get_end())
-    # predict_request.add(pred_affs, total_output_roi.get_end())
-    # predict_request.add(pred_hardness, total_output_roi.get_end())
-
-    # # Also add gt stuff for loss calculation
-    # predict_request.add(gt_lsds, total_output_roi.get_end())
-    # predict_request.add(lsds_weights, total_output_roi.get_end())
-    # predict_request.add(gt_affs, total_output_roi.get_end())
-    # predict_request.add(affs_weights, total_output_roi.get_end())
-
-
-    predict_request[raw] = total_input_roi
-    predict_request[pred_lsds] = total_output_roi
-    predict_request[pred_affs] = total_output_roi
-    predict_request[pred_hardness] = total_output_roi
-
-    # Also add gt stuff for loss calculation
-    predict_request[gt_lsds] = total_output_roi
-    predict_request[lsds_weights] = total_output_roi
-    predict_request[gt_affs] = total_output_roi
-    predict_request[affs_weights] = total_output_roi
-
-
-    with gp.build(pipeline):
-        batch = pipeline.request_batch(predict_request)
-
-    loss_class = import_symbol(cfg.loss.loss_class)
-    loss_init_kwargs = cfg.loss.get('init_kwargs', {})
-    loss_f = loss_class(**loss_init_kwargs)
-
-    # Expects matching shapes for outputs and targets - TODO: make sure they are cropped to the same shape
-    eval_loss = loss_f(
-        pred_lsds=torch.as_tensor(batch[pred_lsds].data),
-        gt_lsds=torch.as_tensor(batch[gt_lsds].data),
-        lsds_weights=torch.as_tensor(batch[lsds_weights].data),
-        pred_affs=torch.as_tensor(batch[pred_affs].data),
-        gt_affs=torch.as_tensor(batch[gt_affs].data),
-        affs_weights=torch.as_tensor(batch[affs_weights].data),
-        pred_hardness=torch.as_tensor(batch[pred_hardness].data),
-    ).item()
-
-    logging.info(f'Eval loss: {eval_loss:.3f}')
-
-    np_batch = {}
-    for gp_key, gp_array in batch.items():
-        np_batch[gp_key.identifier.lower()] = gp_array.data
-
-    return np_batch
+    return eval_result
 
 
 def _get_run_name_from_checkpoint_path(checkpoint_path):

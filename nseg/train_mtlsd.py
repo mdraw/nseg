@@ -436,7 +436,7 @@ def train(cfg: DictConfig) -> None:
         loss_inputs=trainer_loss_inputs,
         save_every=save_every,
         checkpoint_basename=str(save_path / 'model'),
-        resume=False,
+        resume=cfg.training.resume,
         enable_amp=cfg.training.enable_amp,
         enable_dynamo=cfg.training.enable_dynamo,
         save_jit=cfg.training.save_jit,

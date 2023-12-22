@@ -131,11 +131,11 @@ i1_predict:
 
 
 
-  num_workers: 100
+  num_workers: 2
   slurm_options: ["--ntasks=1", "--time=7-0", "--mem=125G", "--cpus-per-task=8", "--gres=gpu:1", "--job-name=ns01pr"]
 
-#  net_input_shape: [96, 484, 484]
-  net_input_shape: [192, 484, 484]
+  net_input_shape: [96, 484, 484]
+#  net_input_shape: [192, 484, 484]
 #  net_offset: [40, 40, 40]
   net_offset: [36, 212, 212]
 

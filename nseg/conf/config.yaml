@@ -7,6 +7,7 @@ defaults:
   - data_prep: v2
   - knossos_raw_to_zarr: default
   - cloudvolume_raw_to_zarr: default
+  - pkl_to_zarr: default
   - _self_
 
 # Common path prefix
@@ -52,7 +53,7 @@ wandb:
   init_cfg:
     dir: ${path_prefix}/${v}/
     entity: mdth
-    project: nseg_hl6
+    project: nseg_re1
     name: ${shortname}
     tags:
       - mtlsd
@@ -74,6 +75,8 @@ training:
   # save_every: 2
   # seed: 0  # TODO: Enable in training, make sure forked processes reseed!
   first_eval_at_step: 11
+
+  resume: false
 
   ## Performance options
 
@@ -116,7 +119,7 @@ eval:
   fragment_threshold: 0.5
 
   ## waterz segmentation agglomeration config
-  waterz_threshold_sweep_linspace: # [0.0, 0.2, 201]  # Don't use that on the test set
+  waterz_threshold_sweep_linspace: # [0.02, 0.50, 25]  # Don't use that on the test set
 
   merge_function: hist_quant_75
   threshold: 0.1
@@ -139,8 +142,11 @@ eval:
 
   write_groups:
     - raw0
-    - gt_seg
+#    - pred_frag
+#    - pred_seg
+#    - gt_seg
     - cropped_pred_frag
+    - cropped_gt_seg
     - cropped_pred_seg
-    - cropped_pred_hardness0
+#    - cropped_pred_hardness0
 

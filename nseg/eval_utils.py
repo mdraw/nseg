@@ -1,6 +1,12 @@
+from copy import deepcopy
+
+import logging
+
 from functools import wraps, cached_property
 import time
 from dataclasses import dataclass
+from funlib.evaluate import expected_run_length, rand_voi
+from networkx import get_node_attributes
 from typing import Any, Optional
 import numpy as np
 from numpy.typing import DTypeLike, ArrayLike
@@ -13,6 +19,64 @@ import zarr
 
 ArrayDict = dict[str, np.ndarray]
 Shape = tuple[int, ...] | np.ndarray
+
+# Code mostly copied from Franz Rieger's implementation in
+#  https://gitlab.mpcdf.mpg.de/riegerfr/synthetictreesegmentations/-/blob/45038e311781660af192ad0f850477ba367b0b7b/boundary_pred.py#L285
+def compute_synem_metrics(pred, gt, gt_skel, tag, mode, verbose=True):
+
+    _print = print if verbose else lambda *args, **kwargs: None
+
+    _print(f"tag: {tag}")
+
+    voi_report_dense = rand_voi(gt.astype(np.uint64), pred.astype(np.uint64), return_cluster_scores=False)
+    voi_dense = voi_report_dense["voi_split"] + voi_report_dense["voi_merge"]
+
+    _print(f"{mode}_voi_dense_{tag}", voi_dense)
+    _print(f"{mode}_voi_dense_split_{tag}", voi_report_dense["voi_split"])
+    _print(f"{mode}_voi_dense_merge_{tag}", voi_report_dense["voi_merge"])
+
+    # pred_skel =
+    skel = deepcopy(gt_skel)
+    n_missed = 0
+    nodes_to_be_removed = []
+
+    for node in skel.nodes:
+        x, y, z = skel.nodes[node]["index_position"]
+        try:
+            skel.nodes[node]["pred_id"] = pred[x, y, z]
+        except IndexError:  # Node not in segmentation (can happen depending on crop/padding) -> remove node
+            n_missed += 1
+            nodes_to_be_removed.append(node)
+
+    skel.remove_nodes_from(nodes_to_be_removed)
+
+    _print(f"n_missed: {n_missed}")
+
+    voi_report_skel = rand_voi(np.array(list(get_node_attributes(skel, "id").values())).astype(np.uint64),
+                               np.array(list(get_node_attributes(skel, "pred_id").values())).astype(np.uint64),
+                               return_cluster_scores=False)
+    voi_skel = voi_report_skel["voi_split"] + voi_report_skel["voi_merge"]
+
+    _print(f"{mode}_skel_voi_{tag}", voi_skel)
+    _print(f"{mode}_skel_voi_split_{tag}", voi_report_skel["voi_split"])
+    _print(f"{mode}_skel_voi_merge_{tag}", voi_report_skel["voi_merge"])
+
+    erl = expected_run_length(skel, "id", "edge_length",
+                              get_node_attributes(skel, "pred_id"),
+                              skeleton_position_attributes=["nm_position"], return_merge_split_stats=True)
+
+    max_erl = expected_run_length(skel, "id", "edge_length",
+                                  get_node_attributes(skel, "id"),
+                                  skeleton_position_attributes=["nm_position"], return_merge_split_stats=True)
+    _print(f"{mode}_max_erl_{tag}", max_erl[0])
+    nerl = erl[0] / max_erl[0]
+    _print(f"nerl: {nerl}")
+    _print(f"{mode}_erl_{tag}", erl[0])
+    _print(f"{mode}_nerl_{tag}", nerl)
+
+    return nerl, voi_skel, voi_dense
+
+
 
 def timeit(func):
     @wraps(func)
