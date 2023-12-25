@@ -47,11 +47,11 @@ nseg-segment eval.cube_root=$v2s1_zarr eval.checkpoint_path=$m_lsd_sts2_q2 eval.
 nseg-segment eval.cube_root=$v2s1_zarr eval.checkpoint_path=$m_lsd_sts2_q3 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
 
 # AFF @ STS18
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q1 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q2 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q3 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q1 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q2 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_aff_sts18_q3 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
 
 # LSD @ STS18
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q1 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q2 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
-nseg-segment eval.cube_root=v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q3 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q1 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q2 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
+nseg-segment eval.cube_root=$v18s1_zarr eval.checkpoint_path=$m_lsd_sts18_q3 eval.waterz_threshold_sweep_linspace='[0.01, 0.50, 50]'
