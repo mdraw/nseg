@@ -857,7 +857,7 @@ def run_eval(cfg: DictConfig, raw_path: Path, checkpoint_path: Optional[Path] = 
             logging.info('Auto-evaluating associated testcube...')
             test_cfg = deepcopy(cfg)
             test_cfg.eval.waterz_threshold_sweep_linspace = None  # Disable sweep for testcube eval
-            test_cfg.eval.threshold = threshold
+            test_cfg.eval.threshold = float(threshold)
             run_eval(
                 cfg=test_cfg,
                 raw_path=testcube_path,
